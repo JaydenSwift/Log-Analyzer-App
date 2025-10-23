@@ -12,41 +12,44 @@
         <materialDesign:Card Margin="10" UniformCornerRadius="15">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="1*" />
-                    <ColumnDefinition Width="15*" />
+                    <!-- Column width is still 80 to guarantee click area. -->
+                    <ColumnDefinition Width="80" />
+                    <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <Grid.Resources>
                     <Style TargetType="materialDesign:PackIcon">
                         <Setter Property="Width" Value="30"></Setter>
                         <Setter Property="Height" Value="30"></Setter>
+                        <!-- FIX: Explicitly center the PackIcon itself -->
+                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                        <Setter Property="VerticalAlignment" Value="Center"/>
                     </Style>
 
-                    <!-- Style for Sidebar Buttons for visual consistency and responsiveness -->
-                    <Style x:Key="SidebarButton" TargetType="{x:Type Button}" BasedOn="{StaticResource MaterialDesignFloatingActionMiniButton}">
-                        <Setter Property="Background" Value="{x:Null}"/>
-                        <Setter Property="BorderBrush" Value="{x:Null}"/>
-                        <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}"/>
-                        <Style.Triggers>
-                            <!-- Change Foreground on hover -->
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Foreground" Value="{DynamicResource SecondaryHueMidBrush}"/>
-                            </Trigger>
-                            <!-- If the parent ListViewItem is selected, change the background color -->
-                            <DataTrigger Binding="{Binding RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type ListViewItem}}, Path=IsSelected}" Value="True">
-                                <Setter Property="Background" Value="{DynamicResource SecondaryHueLightBrush}"/>
-                                <Setter Property="Foreground" Value="{DynamicResource SecondaryHueMidBrush}"/>
-                                <!-- FIX: Removed invalid ShadowAssist.ShadowDepth setter causing XDG0012 and XLS0431 -->
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
+                    <!-- The SidebarButton style is REMOVED as we are styling the ListViewItem directly. -->
 
                     <Style TargetType="{x:Type ListViewItem}">
-                        <Setter Property="HorizontalAlignment" Value="Center"/>
-                        <Setter Property="Margin" Value="0 10"/>
+                        <Setter Property="Margin" Value="0 15"/>
                         <Setter Property="Padding" Value="0"/>
-                        <Setter Property="Height" Value="56"/>
-                        <Setter Property="Width" Value="56"/>
                         <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+                        <!-- Ensure content is centered (the icon) -->
+                        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                        <Setter Property="VerticalContentAlignment" Value="Center"/>
+                        <!-- Ensure the item itself stretches to fill the whole column -->
+                        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}"/>
+                        <Style.Triggers>
+                            <!-- Visual feedback on MouseOver (like a button) -->
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource SecondaryHueMidBrush}"/>
+                                <Setter Property="Background" Value="{DynamicResource MaterialDesignLightBackground}"/>
+                            </Trigger>
+                            <!-- Visual feedback on Selection (active tab) -->
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SecondaryHueLightBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource SecondaryHueMidBrush}"/>
+                            </Trigger>
+                        </Style.Triggers>
                     </Style>
                 </Grid.Resources>
 
@@ -54,32 +57,26 @@
                 <Grid Grid.Column="0" Background="{StaticResource MaterialDesignPaper}">
 
                     <!-- The ListView handles the selection state which we use for navigation -->
-                    <ListView x:Name="SidebarMenu" Margin="0 15" SelectionChanged="SidebarMenu_SelectionChanged">
+                    <ListView x:Name="SidebarMenu" Margin="0 20" SelectionChanged="SidebarMenu_SelectionChanged">
 
-                        <!-- 1. Log Analyzer (Default Page) -->
-                        <ListViewItem Tag="LogAnalyzerView" IsSelected="True">
-                            <Button Style="{StaticResource SidebarButton}" ToolTip="Log Analyzer">
-                                <materialDesign:PackIcon Kind="FileDocumentMultipleOutline"/>
-                            </Button>
+                        <!-- 1. Log Analyzer (Default Page) - Now holds just the icon -->
+                        <ListViewItem Tag="LogAnalyzerView" IsSelected="True" ToolTip="Log Analyzer">
+                            <materialDesign:PackIcon Kind="FileDocumentMultipleOutline"/>
                         </ListViewItem>
 
-                        <!-- 2. Chart Viewer -->
-                        <ListViewItem Tag="ChartViewer">
-                            <Button Style="{StaticResource SidebarButton}" ToolTip="Chart Viewer">
-                                <materialDesign:PackIcon Kind="ChartBoxOutline"/>
-                            </Button>
+                        <!-- 2. Chart Viewer - Now holds just the icon -->
+                        <ListViewItem Tag="ChartViewer" ToolTip="Chart Viewer">
+                            <materialDesign:PackIcon Kind="ChartBoxOutline"/>
                         </ListViewItem>
 
-                        <!-- 3. Settings -->
-                        <ListViewItem Tag="SettingsView">
-                            <Button Style="{StaticResource SidebarButton}" ToolTip="Settings">
-                                <materialDesign:PackIcon Kind="CogOutline"/>
-                            </Button>
+                        <!-- 3. Settings - Now holds just the icon -->
+                        <ListViewItem Tag="SettingsView" ToolTip="Settings">
+                            <materialDesign:PackIcon Kind="CogOutline"/>
                         </ListViewItem>
 
-                        <!-- Exit Button (Retained) -->
-                        <ListViewItem HorizontalAlignment="Center" Margin="0 60 0 0" IsSelected="False" Tag="Exit">
-                            <Button Style="{StaticResource MaterialDesignFloatingActionButton}" HorizontalAlignment="Left"
+                        <!-- Exit Button (Special Case - Still uses a dedicated Button and Click handler) -->
+                        <ListViewItem Margin="-16 0 0 0" IsSelected="False" Tag="Exit" HorizontalContentAlignment="Center">
+                            <Button Style="{StaticResource MaterialDesignFloatingActionButton}" 
                              BorderBrush="{x:Null}" Background="{x:Null}" Foreground="Black" x:Name="btnExit" Click="btnExit_Click" ToolTip="Exit Application">
                                 <StackPanel Margin="-5">
                                     <materialDesign:PackIcon Kind="ExitToApp"/>
