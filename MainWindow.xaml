@@ -20,70 +20,67 @@
                         <Setter Property="Width" Value="30"></Setter>
                         <Setter Property="Height" Value="30"></Setter>
                     </Style>
+
+                    <!-- Style for Sidebar Buttons for visual consistency and responsiveness -->
+                    <Style x:Key="SidebarButton" TargetType="{x:Type Button}" BasedOn="{StaticResource MaterialDesignFloatingActionMiniButton}">
+                        <Setter Property="Background" Value="{x:Null}"/>
+                        <Setter Property="BorderBrush" Value="{x:Null}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}"/>
+                        <Style.Triggers>
+                            <!-- Change Foreground on hover -->
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource SecondaryHueMidBrush}"/>
+                            </Trigger>
+                            <!-- If the parent ListViewItem is selected, change the background color -->
+                            <DataTrigger Binding="{Binding RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type ListViewItem}}, Path=IsSelected}" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SecondaryHueLightBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource SecondaryHueMidBrush}"/>
+                                <!-- FIX: Removed invalid ShadowAssist.ShadowDepth setter causing XDG0012 and XLS0431 -->
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+
+                    <Style TargetType="{x:Type ListViewItem}">
+                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                        <Setter Property="Margin" Value="0 10"/>
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Height" Value="56"/>
+                        <Setter Property="Width" Value="56"/>
+                        <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+                    </Style>
                 </Grid.Resources>
 
-                <!-- Sidebar Grid (Column 0) - Setting background to white to ensure contrast -->
+                <!-- Sidebar Grid (Column 0) -->
                 <Grid Grid.Column="0" Background="{StaticResource MaterialDesignPaper}">
-                    <ListView Margin="0 15">
 
-                        <!-- 
-                        FIX: Explicitly setting Foreground of the buttons to a contrasting color (Teal)
-                        or using a predefined brush to ensure visibility on the white background.
-                        -->
+                    <!-- The ListView handles the selection state which we use for navigation -->
+                    <ListView x:Name="SidebarMenu" Margin="0 15" SelectionChanged="SidebarMenu_SelectionChanged">
 
-                        <!-- File View / Load Logs -->
-                        <ListViewItem HorizontalAlignment="Center" Margin="0 10">
-                            <Button Style="{StaticResource MaterialDesignFloatingActionButton}" HorizontalAlignment="Left"
-                             BorderBrush="{x:Null}" Background="{x:Null}" Foreground="Black">
-                                <StackPanel Margin="-5">
-                                    <materialDesign:PackIcon Kind="FileDocumentMultipleOutline"/>
-                                </StackPanel>
+                        <!-- 1. Log Analyzer (Default Page) -->
+                        <ListViewItem Tag="LogAnalyzerView" IsSelected="True">
+                            <Button Style="{StaticResource SidebarButton}" ToolTip="Log Analyzer">
+                                <materialDesign:PackIcon Kind="FileDocumentMultipleOutline"/>
                             </Button>
                         </ListViewItem>
 
-                        <!-- Summary / Analytics -->
-                        <ListViewItem HorizontalAlignment="Center" Margin="0">
-                            <Button Style="{StaticResource MaterialDesignFloatingActionButton}" HorizontalAlignment="Left"
-                             BorderBrush="{x:Null}" Background="{x:Null}" Foreground="Black">
-                                <StackPanel Margin="-5">
-                                    <materialDesign:PackIcon Kind="ChartBoxOutline"/>
-                                </StackPanel>
+                        <!-- 2. Chart Viewer -->
+                        <ListViewItem Tag="ChartViewer">
+                            <Button Style="{StaticResource SidebarButton}" ToolTip="Chart Viewer">
+                                <materialDesign:PackIcon Kind="ChartBoxOutline"/>
                             </Button>
                         </ListViewItem>
 
-                        <!-- Settings / Configuration -->
-                        <ListViewItem HorizontalAlignment="Center" Margin="0 10">
-                            <Button Style="{StaticResource MaterialDesignFloatingActionButton}" HorizontalAlignment="Left"
-                             BorderBrush="{x:Null}" Background="{x:Null}" Foreground="Black">
-                                <StackPanel Margin="-5">
-                                    <materialDesign:PackIcon Kind="CogOutline"/>
-                                </StackPanel>
+                        <!-- 3. Settings -->
+                        <ListViewItem Tag="SettingsView">
+                            <Button Style="{StaticResource SidebarButton}" ToolTip="Settings">
+                                <materialDesign:PackIcon Kind="CogOutline"/>
                             </Button>
                         </ListViewItem>
 
-                        <!-- Chat/Other (Removed for Log Analyzer focus) 
-                        <ListViewItem HorizontalAlignment="Center" Margin="0">
+                        <!-- Exit Button (Retained) -->
+                        <ListViewItem HorizontalAlignment="Center" Margin="0 60 0 0" IsSelected="False" Tag="Exit">
                             <Button Style="{StaticResource MaterialDesignFloatingActionButton}" HorizontalAlignment="Left"
-                             BorderBrush="{x:Null}" Background="{x:Null}" Foreground="{StaticResource PrimaryHueMidBrush}">
-                                <StackPanel Margin="-5">
-                                    <materialDesign:PackIcon Kind="EqualiserVertical"/>
-                                </StackPanel>
-                            </Button>
-                        </ListViewItem>
-                        <ListViewItem HorizontalAlignment="Center" Margin="0 10">
-                            <Button Style="{StaticResource MaterialDesignFloatingActionButton}" HorizontalAlignment="Left"
-                             BorderBrush="{x:Null}" Background="{x:Null}" Foreground="{StaticResource PrimaryHueMidBrush}">
-                                <StackPanel Margin="-5">
-                                    <materialDesign:PackIcon Kind="ChatOutline"/>
-                                </StackPanel>
-                            </Button>
-                        </ListViewItem>
-                        -->
-
-                        <!-- Exit Button -->
-                        <ListViewItem HorizontalAlignment="Center" Margin="0 60 0 0">
-                            <Button Style="{StaticResource MaterialDesignFloatingActionButton}" HorizontalAlignment="Left"
-                             BorderBrush="{x:Null}" Background="{x:Null}" Foreground="Black" x:Name="btnExit" Click="btnExit_Click">
+                             BorderBrush="{x:Null}" Background="{x:Null}" Foreground="Black" x:Name="btnExit" Click="btnExit_Click" ToolTip="Exit Application">
                                 <StackPanel Margin="-5">
                                     <materialDesign:PackIcon Kind="ExitToApp"/>
                                 </StackPanel>
@@ -93,8 +90,8 @@
                 </Grid>
 
                 <!-- Content Area -->
-                <Grid Grid.Column="1" Background="White" Name="RenderPages">
-                    <!-- LogAnalyzerView is loaded here via code-behind -->
+                <Grid Grid.Column="1" Background="White" x:Name="RenderPages">
+                    <!-- Views will be dynamically loaded here -->
                 </Grid>
             </Grid>
         </materialDesign:Card>
