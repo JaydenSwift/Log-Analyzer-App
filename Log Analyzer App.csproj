@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>Log_Analyzer_App</RootNamespace>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Use the latest stable version of MaterialDesignThemes. -->
+    <PackageReference Include="MaterialDesignThemes" Version="5.3.0" />
+    <!-- MaterialDesignColors is needed for the color resources referenced in App.xaml. -->
+    <PackageReference Include="MaterialDesignColors" Version="5.3.0" />
+  </ItemGroup>
+
+</Project>

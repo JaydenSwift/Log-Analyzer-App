@@ -1,0 +1,141 @@
+﻿<UserControl x:Class="Log_Analyzer_App.LogAnalyzerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             mc:Ignorable="d" 
+             d:DesignHeight="830" d:DesignWidth="1020">
+
+    <Grid Margin="20">
+        <Grid.ColumnDefinitions>
+            <!-- Column for the DataGrid and main controls -->
+            <ColumnDefinition Width="*" />
+            <!-- Column for the sidebar, filters, and status -->
+            <ColumnDefinition Width="350" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Main Log Display and Controls (Left Column) -->
+        <StackPanel Grid.Column="0" Margin="0 0 20 0">
+            <TextBlock Text="Log File Analyzer" FontSize="28" FontWeight="Bold" Margin="0 0 0 10" Foreground="{DynamicResource PrimaryHueMidBrush}"/>
+
+            <!-- File Upload/Load Section -->
+            <materialDesign:Card UniformCornerRadius="10" Padding="15" Margin="0 0 0 15">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock x:Name="FilePathTextBlock" 
+                               Text="No log file loaded. Click 'Load File' to begin analysis." 
+                               VerticalAlignment="Center" 
+                               FontWeight="SemiBold" 
+                               Opacity="0.7"/>
+
+                    <Button Content="LOAD FILE" 
+                            Grid.Column="1" 
+                            Style="{StaticResource MaterialDesignRaisedButton}"
+                            materialDesign:ButtonAssist.CornerRadius="5"
+                            ToolTip="Load a .log or .txt file for analysis."
+                            Margin="10 0 0 0"/>
+                </Grid>
+            </materialDesign:Card>
+
+            <!-- Log Content Display (DataGrid) -->
+            <materialDesign:Card UniformCornerRadius="10" Height="650">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="15 10">
+                        <TextBlock Text="Log Lines" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <materialDesign:Badged Content="12,500" Margin="10 3 0 0" BadgeBackground="{DynamicResource MaterialDesignLightTealAccentBrush}" BadgeForeground="White"/>
+                    </StackPanel>
+
+                    <DataGrid Grid.Row="1" 
+                              AutoGenerateColumns="False" 
+                              CanUserAddRows="False" 
+                              HeadersVisibility="Column"
+                              materialDesign:DataGridAssist.CellPadding="10"
+                              materialDesign:DataGridAssist.ColumnHeaderPadding="20 10"
+                              Margin="15 0 15 15" SelectionChanged="DataGrid_SelectionChanged">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Timestamp" Width="Auto" IsReadOnly="True" Binding="{Binding Timestamp}"/>
+                            <DataGridTextColumn Header="Level" Width="Auto" IsReadOnly="True" Binding="{Binding Level}"/>
+                            <DataGridTextColumn Header="Message" Width="*" IsReadOnly="True" Binding="{Binding Message}"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </materialDesign:Card>
+
+        </StackPanel>
+
+        <!-- Analysis & Filters Sidebar (Right Column) -->
+        <StackPanel Grid.Column="1">
+            <TextBlock Text="Analysis &amp; Processing" FontSize="20" FontWeight="SemiBold" Margin="0 0 0 10"/>
+
+            <!-- Python Processing Status Card -->
+            <materialDesign:Card UniformCornerRadius="10" Margin="0 0 0 15" Padding="15" Background="{DynamicResource MaterialDesignLightBackground}">
+                <StackPanel>
+                    <TextBlock Text="Python Parser Status" FontWeight="Bold" Margin="0 0 0 5"/>
+                    <TextBlock Text="The parsing logic will run via a separate Python script. WPF handles file I/O and displaying the results returned by Python." TextWrapping="Wrap" Opacity="0.8" FontSize="12"/>
+                    <TextBlock Text="Status: Waiting for log file..." x:Name="PythonStatus" Margin="0 5 0 0" Foreground="Gray" FontWeight="SemiBold"/>
+
+                    <!-- FIX: Changed Content attribute to use a StackPanel container for icon and text -->
+                    <Button Style="{StaticResource MaterialDesignFlatButton}" 
+                            Foreground="{DynamicResource SecondaryHueMidBrush}" 
+                            Margin="0 10 0 0" 
+                            HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="PlayOutline" Width="16" Height="16" Margin="0 0 5 0"/>
+                            <TextBlock Text="RUN ANALYSIS"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </materialDesign:Card>
+
+            <!-- Summary Stats Card -->
+            <materialDesign:Card UniformCornerRadius="10" Margin="0 0 0 15" Padding="15">
+                <StackPanel>
+                    <TextBlock Text="Summary Statistics" FontWeight="Bold" Margin="0 0 0 10"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <materialDesign:PackIcon Kind="Information" Grid.Row="0" Grid.Column="0" Margin="0 0 10 3" Foreground="Blue"/>
+                        <TextBlock Text="INFO Events:" Grid.Row="0" Grid.Column="0" Margin="40 6 0 5"/>
+                        <TextBlock Text="8,900" Grid.Row="0" Grid.Column="1" HorizontalAlignment="Right" FontWeight="SemiBold" Margin="8"/>
+
+                        <materialDesign:PackIcon Kind="Alert" Grid.Row="1" Grid.Column="0" Margin="0 0 10 3" Foreground="Orange"/>
+                        <TextBlock Text="WARN Events:" Grid.Row="1" Grid.Column="0" Margin="40 6 0 5"/>
+                        <TextBlock Text="580" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Right" FontWeight="SemiBold" Margin="8"/>
+
+                        <materialDesign:PackIcon Kind="AlertCircle" Grid.Row="2" Grid.Column="0" Margin="0 0 10 3" Foreground="Red"/>
+                        <TextBlock Text="ERROR Events:" Grid.Row="2" Grid.Column="0" Margin="40 6 0 5"/>
+                        <TextBlock Text="20" Grid.Row="2" Grid.Column="1" HorizontalAlignment="Right" FontWeight="SemiBold" Margin="8"/>
+                    </Grid>
+                </StackPanel>
+            </materialDesign:Card>
+
+            <!-- Filters Card -->
+            <materialDesign:Card UniformCornerRadius="10" Margin="0 0 0 15" Padding="15">
+                <StackPanel>
+                    <TextBlock Text="Filters" FontWeight="Bold" Margin="0 0 0 10"/>
+                    <CheckBox Content="Show only Errors" Margin="0 5"/>
+                    <CheckBox Content="Filter by Date Range" Margin="0 5"/>
+                    <TextBox materialDesign:HintAssist.Hint="Search Message Content" Style="{StaticResource MaterialDesignFloatingHintTextBox}" Margin="0 10 0 0"/>
+                </StackPanel>
+            </materialDesign:Card>
+        </StackPanel>
+    </Grid>
+</UserControl>
