@@ -22,6 +22,40 @@ namespace Log_Analyzer_App
         public static ObservableCollection<LogEntry> LogEntries { get; } = new ObservableCollection<LogEntry>();
         // Persistent file path
         public static string CurrentFilePath { get; set; } = "No log file loaded.";
+
+        // --- New persistent statistics properties for charts/summary ---
+        // Stored as Dictionary<string, double> to be easily consumable by LiveCharts
+        public static Dictionary<string, double> SummaryCounts { get; } = new Dictionary<string, double>
+        {
+            { "INFO", 0 },
+            { "WARN", 0 },
+            { "ERROR", 0 }
+        };
+
+        /// <summary>
+        /// Calculates the count for each log level and stores it in SummaryCounts.
+        /// This method should be called immediately after LogEntries is populated.
+        /// </summary>
+        public static void CalculateSummaryCounts()
+        {
+            // Reset counts
+            SummaryCounts["INFO"] = 0;
+            SummaryCounts["WARN"] = 0;
+            SummaryCounts["ERROR"] = 0;
+
+            if (LogEntries.Any())
+            {
+                // Group by Level and count
+                var counts = LogEntries
+                    .GroupBy(e => e.Level)
+                    .ToDictionary(g => g.Key, g => (double)g.Count());
+
+                // Update SummaryCounts dictionary safely
+                if (counts.ContainsKey("INFO")) SummaryCounts["INFO"] = counts["INFO"];
+                if (counts.ContainsKey("WARN")) SummaryCounts["WARN"] = counts["WARN"];
+                if (counts.ContainsKey("ERROR")) SummaryCounts["ERROR"] = counts["ERROR"];
+            }
+        }
     }
 
     /// <summary>
@@ -106,6 +140,9 @@ namespace Log_Analyzer_App
                         ParseLogLine(line);
                     }
 
+                    // *** CRITICAL STEP: Calculate summary counts after successful load ***
+                    LogDataStore.CalculateSummaryCounts();
+
                     // Store persistent data
                     LogDataStore.CurrentFilePath = $"File Loaded: {filePath} ({_logEntries.Count} lines)";
 
@@ -152,10 +189,12 @@ namespace Log_Analyzer_App
 
         /// <summary>
         /// Calculates and displays the count for each log level in the Summary Statistics section.
+        /// Now uses the persistent counts stored in LogDataStore.
         /// </summary>
         private void UpdateSummaryStatistics(bool clear = false)
         {
-            if (clear)
+            // If cleared or no entries, reset display.
+            if (clear || !LogDataStore.LogEntries.Any())
             {
                 InfoCountText.Text = "0";
                 WarnCountText.Text = "0";
@@ -163,15 +202,10 @@ namespace Log_Analyzer_App
                 return;
             }
 
-            // Calculate counts
-            var counts = _logEntries
-                .GroupBy(e => e.Level)
-                .ToDictionary(g => g.Key, g => g.Count());
-
-            // Set the TextBlock content. If a key is missing, default to 0.
-            InfoCountText.Text = counts.ContainsKey("INFO") ? counts["INFO"].ToString("N0") : "0";
-            WarnCountText.Text = counts.ContainsKey("WARN") ? counts["WARN"].ToString("N0") : "0";
-            ErrorCountText.Text = counts.ContainsKey("ERROR") ? counts["ERROR"].ToString("N0") : "0";
+            // Retrieve and display counts from the central data store
+            InfoCountText.Text = LogDataStore.SummaryCounts["INFO"].ToString("N0");
+            WarnCountText.Text = LogDataStore.SummaryCounts["WARN"].ToString("N0");
+            ErrorCountText.Text = LogDataStore.SummaryCounts["ERROR"].ToString("N0");
         }
     }
 }

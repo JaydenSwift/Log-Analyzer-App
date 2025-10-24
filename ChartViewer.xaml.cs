@@ -42,14 +42,6 @@ namespace Log_Analyzer_App
 
         // --- Data and State Variables ---
 
-        // Holds the hardcoded log counts
-        private Dictionary<string, double> _logData = new Dictionary<string, double>
-        {
-            { "INFO", 12500 },
-            { "WARN", 580 },
-            { "ERROR", 20 }
-        };
-
         // UI State
         private bool _isInfoVisible = true;
         private bool _isWarnVisible = true;
@@ -60,6 +52,11 @@ namespace Log_Analyzer_App
         {
             InitializeComponent();
             this.DataContext = this;
+
+            // In case the user navigates directly here without loading a file first, 
+            // ensure the counts are calculated (will result in 0s if no data).
+            LogDataStore.CalculateSummaryCounts();
+
             InitializeChartData();
         }
 
@@ -67,62 +64,77 @@ namespace Log_Analyzer_App
 
         private void InitializeChartData()
         {
+            // Fetch live data from the persistent store
+            var logData = LogDataStore.SummaryCounts;
+
             // 1. Setup Formatter
             Formatter = value => value.ToString("N0");
 
             // 2. Setup Labels (Must be before SeriesCollection)
-            Labels = new[] { "INFO", "WARN", "ERROR" };
+            // Use the keys from the summary counts dictionary for the X-axis labels
+            Labels = logData.Keys.ToArray();
 
             // 3. Initialize Collections
             SeriesCollection = new SeriesCollection();
             PieSeriesCollection = new SeriesCollection();
 
             // 4. Initial Chart Population
-            UpdateBarChart();
-            UpdatePieChart(0); // Initialize with 0 threshold, default percentage mode
+            UpdateBarChart(logData);
+            UpdatePieChart(logData, SliceThresholdSlider.Value);
         }
 
         // --- Core Update Methods ---
 
-        private void UpdateBarChart()
+        /// <summary>
+        /// Updates the Column/Bar Chart based on current filters and data.
+        /// </summary>
+        /// <param name="logData">The source data dictionary (LogDataStore.SummaryCounts).</param>
+        private void UpdateBarChart(Dictionary<string, double> logData)
         {
             SeriesCollection.Clear();
 
             // Create the data array based on current filters
             var filteredData = new ChartValues<double>
             {
-                _isInfoVisible ? _logData["INFO"] : 0,
-                _isWarnVisible ? _logData["WARN"] : 0,
-                _isErrorVisible ? _logData["ERROR"] : 0
+                // Use safe checks to ensure the keys exist, although LogDataStore pre-initializes them.
+                _isInfoVisible ? logData.ContainsKey("INFO") ? logData["INFO"] : 0 : 0,
+                _isWarnVisible ? logData.ContainsKey("WARN") ? logData["WARN"] : 0 : 0,
+                _isErrorVisible ? logData.ContainsKey("ERROR") ? logData["ERROR"] : 0 : 0
             };
 
-            // Only add the series if at least one level is visible
+            // Only add the series if at least one level is visible and has a value
             if (filteredData.Any(v => v > 0))
             {
                 SeriesCollection.Add(new ColumnSeries
                 {
                     Title = "Log Events",
                     Values = filteredData,
-                    Fill = Brushes.Blue, // Solid blue for the combined bar
+                    // Use a dynamic color that works well for bars
+                    Fill = (SolidColorBrush)new BrushConverter().ConvertFromString("#FF007ACC"),
                     DataLabels = true,
                     LabelPoint = point => point.Y.ToString("N0")
                 });
             }
         }
 
-        private void UpdatePieChart(double minPercentageThreshold)
+        /// <summary>
+        /// Updates the Pie Chart based on the current data, label mode, and slice threshold.
+        /// </summary>
+        /// <param name="logData">The source data dictionary (LogDataStore.SummaryCounts).</param>
+        /// <param name="minPercentageThreshold">The minimum percentage for a slice to be displayed.</param>
+        private void UpdatePieChart(Dictionary<string, double> logData, double minPercentageThreshold)
         {
             PieSeriesCollection.Clear();
 
-            double total = _logData.Values.Sum();
+            double total = logData.Values.Sum();
             if (total == 0) return;
 
             // Define colors for consistency
             var colors = new Dictionary<string, SolidColorBrush>
             {
-                { "INFO", Brushes.Green },
-                { "WARN", Brushes.Orange },
-                { "ERROR", Brushes.Red }
+                { "INFO", (SolidColorBrush)new BrushConverter().ConvertFromString("#4CAF50") }, // Green
+                { "WARN", (SolidColorBrush)new BrushConverter().ConvertFromString("#FFC107") }, // Amber
+                { "ERROR", (SolidColorBrush)new BrushConverter().ConvertFromString("#F44336") }  // Red
             };
 
             // Determine label formatter based on RadioButton selection
@@ -138,7 +150,7 @@ namespace Log_Analyzer_App
                 return $"{point.SeriesView.Title}: {point.Y:N0}";
             };
 
-            foreach (var kvp in _logData)
+            foreach (var kvp in logData)
             {
                 double percentage = (kvp.Value / total) * 100;
 
@@ -171,7 +183,8 @@ namespace Log_Analyzer_App
             _isWarnVisible = WarnCheckBox.IsChecked ?? false;
             _isErrorVisible = ErrorCheckBox.IsChecked ?? false;
 
-            UpdateBarChart();
+            // Pass the live data to the update method
+            UpdateBarChart(LogDataStore.SummaryCounts);
         }
 
         /// <summary>
@@ -183,7 +196,7 @@ namespace Log_Analyzer_App
             if (!IsLoaded) return;
 
             // Re-run the pie chart update to apply the new label formatter based on checked state
-            UpdatePieChart(SliceThresholdSlider.Value);
+            UpdatePieChart(LogDataStore.SummaryCounts, SliceThresholdSlider.Value);
         }
 
         /// <summary>
@@ -198,7 +211,7 @@ namespace Log_Analyzer_App
             SlicePercentageText.Text = $"Minimum Slice Percentage ({e.NewValue:N0}%)";
 
             // Re-run the pie chart update with the new threshold
-            UpdatePieChart(e.NewValue);
+            UpdatePieChart(LogDataStore.SummaryCounts, e.NewValue);
         }
 
         // --- INotifyPropertyChanged Implementation ---
