@@ -14,8 +14,6 @@ namespace Log_Analyzer_App
         public MainWindow()
         {
             InitializeComponent();
-            // Set initial selection after fields are assigned
-            SidebarMenu.SelectedIndex = 0;
         }
 
         /// <summary>
@@ -25,16 +23,8 @@ namespace Log_Analyzer_App
         /// </summary>
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            // Ensure the UI tree is ready before selecting
-            SidebarMenu.SelectedIndex = 0; // or NavigateToView("LogAnalyzerView");
-        }
-
-        /// <summary>
-        /// Handles the click event for the Exit button on the navigation bar.
-        /// </summary>
-        private void btnExit_Click(object sender, RoutedEventArgs e)
-        {
-            Application.Current.Shutdown();
+            // Explicitly call the navigation method to guarantee the initial view loads.
+            NavigateToView("LogAnalyzerView");
         }
 
         /// <summary>
@@ -52,11 +42,9 @@ namespace Log_Analyzer_App
                 // Check for the special case 'Exit' tag
                 if (viewName == "Exit")
                 {
-                    // For the Exit button, we don't want to load a new view, 
-                    // and the exit logic is handled by the dedicated btnExit_Click
-                    // However, we need to deselect it immediately to avoid confusion.
-                    selectedItem.IsSelected = false;
-                    return;
+                    // FIX: Handle exit directly here since the ListViewItem click triggers the selection.
+                    Application.Current.Shutdown();
+                    return; // Application is shutting down, no need to navigate
                 }
 
                 NavigateToView(viewName);
@@ -95,5 +83,7 @@ namespace Log_Analyzer_App
                 RenderPages.Children.Add(newView);
             }
         }
+
+        // Removed the unused btnExit_Click handler
     }
 }

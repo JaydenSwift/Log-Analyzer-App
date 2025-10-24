@@ -74,14 +74,10 @@
                             <materialDesign:PackIcon Kind="CogOutline"/>
                         </ListViewItem>
 
-                        <!-- Exit Button (Special Case - Still uses a dedicated Button and Click handler) -->
-                        <ListViewItem Margin="-16 0 0 0" IsSelected="False" Tag="Exit" HorizontalContentAlignment="Center">
-                            <Button Style="{StaticResource MaterialDesignFloatingActionButton}" 
-                             BorderBrush="{x:Null}" Background="{x:Null}" Foreground="Black" x:Name="btnExit" Click="btnExit_Click" ToolTip="Exit Application">
-                                <StackPanel Margin="-5">
-                                    <materialDesign:PackIcon Kind="ExitToApp"/>
-                                </StackPanel>
-                            </Button>
+                        <!-- Exit Button (Special Case - Now the ListViewItem itself is clickable and handles the selection logic) -->
+                        <!-- FIX: Removed nested Button and moved the icon directly into the ListViewItem content to make the whole item clickable. -->
+                        <ListViewItem Margin="0 15" IsSelected="False" Tag="Exit" ToolTip="Exit Application">
+                            <materialDesign:PackIcon Kind="ExitToApp" Foreground="Black"/>
                         </ListViewItem>
                     </ListView>
                 </Grid>
