@@ -4,13 +4,111 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:lvc="clr-namespace:LiveCharts.Wpf;assembly=LiveCharts.Wpf"
              mc:Ignorable="d" 
              d:DesignHeight="830" d:DesignWidth="1020">
     <Grid Background="{DynamicResource MaterialDesignPaper}" Margin="20">
-        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-            <materialDesign:PackIcon Kind="ChartBoxMultiple" Width="64" Height="64" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryHueMidBrush}"/>
-            <TextBlock Text="Chart Viewer Page" FontSize="32" FontWeight="Bold" Margin="0 10 0 5" HorizontalAlignment="Center"/>
-            <TextBlock Text="Log visualization and statistics will be displayed here." FontSize="16" HorizontalAlignment="Center" Opacity="0.7"/>
+        <StackPanel Margin="20">
+            <TextBlock Text="Log Event Distribution Analysis" FontSize="32" FontWeight="Bold" Margin="0 0 0 10" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryHueMidBrush}"/>
+            <TextBlock Text="Comparing raw counts (Bar) against proportional breakdown (Pie)." FontSize="16" HorizontalAlignment="Center" Opacity="0.7" Margin="0 0 0 20"/>
+
+            <materialDesign:Card UniformCornerRadius="10" Padding="15" Height="650">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left Column: Bar Chart (Raw Counts) & Options -->
+                    <Grid Grid.Column="0" Margin="0 0 10 0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Bar Chart -->
+                        <StackPanel Grid.Row="0">
+                            <TextBlock Text="Event Count Breakdown" FontWeight="SemiBold" Margin="0 0 0 10" HorizontalAlignment="Center" FontSize="18"/>
+                            <lvc:CartesianChart Series="{Binding SeriesCollection}" 
+                                                LegendLocation="Bottom" 
+                                                Hoverable="True"
+                                                Height="400">
+                                <!-- Adjusted from 450 to 400 to make X-axis labels visible -->
+
+                                <lvc:CartesianChart.AxisX>
+                                    <lvc:Axis Labels="{Binding Labels}"/>
+                                </lvc:CartesianChart.AxisX>
+
+                                <lvc:CartesianChart.AxisY>
+                                    <lvc:Axis Title="Count" LabelFormatter="{Binding Formatter}"/>
+                                </lvc:CartesianChart.AxisY>
+
+                            </lvc:CartesianChart>
+                        </StackPanel>
+
+                        <!-- Options Box for Bar Chart -->
+                        <materialDesign:Card Grid.Row="1" UniformCornerRadius="8" Padding="15" Margin="0 15 0 0" Background="{DynamicResource MaterialDesignLightBackground}">
+                            <StackPanel>
+                                <TextBlock Text="Bar Chart Options (Data &amp; Filters)" FontWeight="Bold" Margin="0 0 0 10"/>
+
+                                <!-- Data Source Filter - Note: Functional implementation for ComboBox is complex and deferred -->
+                                <ComboBox materialDesign:HintAssist.Hint="Chart Data Source" Margin="0 0 0 10" SelectedIndex="0">
+                                    <ComboBoxItem Content="Full Log File Data"/>
+                                    <ComboBoxItem Content="Current Filtered Grid Data"/>
+                                    <ComboBoxItem Content="Last 24 Hours (If Time Parsing Available)"/>
+                                </ComboBox>
+
+                                <!-- Log Level Checkboxes -->
+                                <TextBlock Text="Visible Log Levels:" Opacity="0.8" Margin="0 5 0 5"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <CheckBox x:Name="InfoCheckBox" Content="INFO" IsChecked="True" Margin="0 0 15 0" Foreground="{StaticResource MaterialDesignBody}" Checked="LogFilter_Changed" Unchecked="LogFilter_Changed"/>
+                                    <CheckBox x:Name="WarnCheckBox" Content="WARN" IsChecked="True" Margin="0 0 15 0" Foreground="{StaticResource MaterialDesignBody}" Checked="LogFilter_Changed" Unchecked="LogFilter_Changed"/>
+                                    <CheckBox x:Name="ErrorCheckBox" Content="ERROR" IsChecked="True" Foreground="{StaticResource MaterialDesignBody}" Checked="LogFilter_Changed" Unchecked="LogFilter_Changed"/>
+                                </StackPanel>
+
+                            </StackPanel>
+                        </materialDesign:Card>
+                    </Grid>
+
+                    <!-- Right Column: Pie Chart (Proportional Breakdown) & Options -->
+                    <Grid Grid.Column="1" Margin="10 0 0 0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Pie Chart -->
+                        <StackPanel Grid.Row="0">
+                            <TextBlock Text="Percentage Distribution" FontWeight="SemiBold" Margin="0 0 0 10" HorizontalAlignment="Center" FontSize="18"/>
+                            <lvc:PieChart Series="{Binding PieSeriesCollection}" 
+                                          LegendLocation="Bottom" 
+                                          Hoverable="True"
+                                          InnerRadius="50"
+                                          Height="400">
+                                <!-- Adjusted from 450 to 400 -->
+                            </lvc:PieChart>
+                        </StackPanel>
+
+                        <!-- Options Box for Pie Chart -->
+                        <materialDesign:Card Grid.Row="1" UniformCornerRadius="8" Padding="15" Margin="0 15 0 0" Background="{DynamicResource MaterialDesignLightBackground}">
+                            <StackPanel>
+                                <TextBlock Text="Pie Chart Options (Display)" FontWeight="Bold" Margin="0 0 0 10"/>
+
+                                <!-- Label Display Style -->
+                                <TextBlock Text="Slice Label Content:" Opacity="0.8" Margin="0 0 0 5"/>
+                                <StackPanel Orientation="Horizontal" Margin="0 0 0 10">
+                                    <RadioButton x:Name="PercentRadio" Content="Percentage Only" IsChecked="True" GroupName="PieLabel" Margin="0 0 15 0" Foreground="{StaticResource MaterialDesignBody}" Checked="PieLabelMode_Changed"/>
+                                    <RadioButton x:Name="RawCountRadio" Content="Raw Count" GroupName="PieLabel" Foreground="{StaticResource MaterialDesignBody}" Checked="PieLabelMode_Changed"/>
+                                </StackPanel>
+
+                                <!-- Minimum Threshold Slider -->
+                                <TextBlock Text="Minimum Slice Percentage (0%)" x:Name="SlicePercentageText" Opacity="0.8" Margin="0 5 0 5"/>
+                                <Slider x:Name="SliceThresholdSlider" Value="0" Minimum="0" Maximum="10" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliceThresholdSlider_ValueChanged"/>
+                            </StackPanel>
+                        </materialDesign:Card>
+                    </Grid>
+                </Grid>
+            </materialDesign:Card>
         </StackPanel>
     </Grid>
 </UserControl>

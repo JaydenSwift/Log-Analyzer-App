@@ -35,10 +35,12 @@
 
                     <Button Content="LOAD FILE" 
                             Grid.Column="1" 
+                            x:Name="LoadFileButton"
                             Style="{StaticResource MaterialDesignRaisedButton}"
                             materialDesign:ButtonAssist.CornerRadius="5"
-                            ToolTip="Load a .log or .txt file for analysis."
-                            Margin="10 0 0 0"/>
+                            ToolTip="Open a file dialog to select a .log or .txt file for analysis."
+                            Margin="10 0 0 0"
+                            Click="LoadFileButton_Click"/>
                 </Grid>
             </materialDesign:Card>
 
@@ -52,10 +54,12 @@
 
                     <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="15 10">
                         <TextBlock Text="Log Lines" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        <materialDesign:Badged Content="12,500" Margin="10 3 0 0" BadgeBackground="{DynamicResource MaterialDesignLightTealAccentBrush}" BadgeForeground="White"/>
+                        <!-- Bind Badged content to actual log count -->
+                        <materialDesign:Badged Content="{Binding ElementName=LogDataGrid, Path=Items.Count}" Margin="10 3 0 0" BadgeBackground="{DynamicResource MaterialDesignLightTealAccentBrush}" BadgeForeground="White"/>
                     </StackPanel>
 
                     <DataGrid Grid.Row="1" 
+                              x:Name="LogDataGrid"
                               AutoGenerateColumns="False" 
                               CanUserAddRows="False" 
                               HeadersVisibility="Column"
@@ -120,17 +124,17 @@
                         <!-- INFO Events -->
                         <materialDesign:PackIcon Kind="Information" Grid.Row="0" Grid.Column="0" Margin="0 6 10 6" Foreground="Blue" VerticalAlignment="Center"/>
                         <TextBlock Text="INFO Events:" Grid.Row="0" Grid.Column="1" Margin="0 6 0 6" VerticalAlignment="Center"/>
-                        <TextBlock Text="8,900" Grid.Row="0" Grid.Column="2" HorizontalAlignment="Right" FontWeight="SemiBold" Margin="8" VerticalAlignment="Center"/>
+                        <TextBlock Text="8,900" Grid.Row="0" Grid.Column="2" x:Name="InfoCountText" HorizontalAlignment="Right" FontWeight="SemiBold" Margin="8" VerticalAlignment="Center"/>
 
                         <!-- WARN Events -->
                         <materialDesign:PackIcon Kind="Alert" Grid.Row="1" Grid.Column="0" Margin="0 6 10 6" Foreground="Orange" VerticalAlignment="Center"/>
                         <TextBlock Text="WARN Events:" Grid.Row="1" Grid.Column="1" Margin="0 6 0 6" VerticalAlignment="Center"/>
-                        <TextBlock Text="580" Grid.Row="1" Grid.Column="2" HorizontalAlignment="Right" FontWeight="SemiBold" Margin="8" VerticalAlignment="Center"/>
+                        <TextBlock Text="580" Grid.Row="1" Grid.Column="2" x:Name="WarnCountText" HorizontalAlignment="Right" FontWeight="SemiBold" Margin="8" VerticalAlignment="Center"/>
 
                         <!-- ERROR Events -->
                         <materialDesign:PackIcon Kind="AlertCircle" Grid.Row="2" Grid.Column="0" Margin="0 6 10 6" Foreground="Red" VerticalAlignment="Center"/>
                         <TextBlock Text="ERROR Events:" Grid.Row="2" Grid.Column="1" Margin="0 6 0 6" VerticalAlignment="Center"/>
-                        <TextBlock Text="20" Grid.Row="2" Grid.Column="2" HorizontalAlignment="Right" FontWeight="SemiBold" Margin="8" VerticalAlignment="Center"/>
+                        <TextBlock Text="20" Grid.Row="2" Grid.Column="2" x:Name="ErrorCountText" HorizontalAlignment="Right" FontWeight="SemiBold" Margin="8" VerticalAlignment="Center"/>
                     </Grid>
                 </StackPanel>
             </materialDesign:Card>

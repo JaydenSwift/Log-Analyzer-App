@@ -1,0 +1,11 @@
+[2025-10-23 09:00:00] INFO: Application started successfully.
+[2025-10-23 09:00:05] WARN: Configuration file 'settings.xml' not found, using defaults.
+[2025-10-23 09:00:10] INFO: User 'admin' logged in.
+[2025-10-23 09:00:15] INFO: Database query executed in 15ms.
+[2025-10-23 09:00:20] ERROR: Failed to connect to external service (Timeout).
+[2025-10-23 09:00:25] INFO: User action completed.
+[2025-10-23 09:00:30] INFO: Background task initialized.
+[2025-10-23 09:00:35] WARN: Low memory alert detected. Check heap status.
+[2025-10-23 09:00:40] INFO: Session cleanup started.
+[2025-10-23 09:00:45] ERROR: DivisionByZero exception in CalculateData().
+[2025-10-23 09:00:50] INFO: Operation finished.
