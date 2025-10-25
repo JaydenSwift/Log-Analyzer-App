@@ -15,11 +15,12 @@ using System.Threading.Tasks;
 // NEW: For forcing UI updates on static bindings
 using System.Windows.Data;
 using System.Windows.Input;
+// NEW: For INotifyPropertyChanged implementation
+using System.ComponentModel;
 
 namespace Log_Analyzer_App
 {
     // --- Model Class for Python JSON output ---
-    // This structure holds the entire JSON response from the Python script.
     public class PythonParserResponse
     {
         public bool Success { get; set; }
@@ -47,11 +48,10 @@ namespace Log_Analyzer_App
         public static string CurrentLogPatternDescription { get; set; } = "Default Pattern: Captures [Timestamp], Level (INFO|WARN|ERROR), and Message.";
 
         // NEW: Stores the first non-empty line of the selected file for preview
-        // CRITICAL FIX: Must be public for XAML binding
         public static string FirstLogLine { get; set; } = string.Empty;
 
         // NEW: Stores the result of parsing the first line with the current pattern
-        // CRITICAL FIX: Must be public for XAML binding
+        // We revert this back to a standard LogEntry instance
         public static LogEntry ParsedFirstLine { get; set; } = new LogEntry
         {
             Timestamp = "N/A",
@@ -106,14 +106,60 @@ namespace Log_Analyzer_App
         // Reference the static LogEntries collection directly
         private ObservableCollection<LogEntry> _logEntries = LogDataStore.LogEntries;
 
+        // FIX: Non-static class to hold preview binding data and implement INotifyPropertyChanged
+        public class LogPreviewModel : INotifyPropertyChanged
+        {
+            private string _firstLogLine;
+            private LogEntry _parsedFirstLine;
+
+            public string FirstLogLine
+            {
+                get => _firstLogLine;
+                set { _firstLogLine = value; OnPropertyChanged(nameof(FirstLogLine)); }
+            }
+
+            // Using LogEntry here to hold the three parsed fields
+            public LogEntry ParsedFirstLine
+            {
+                get => _parsedFirstLine;
+                set { _parsedFirstLine = value; OnPropertyChanged(nameof(ParsedFirstLine)); }
+            }
+
+            public event PropertyChangedEventHandler PropertyChanged;
+
+            protected virtual void OnPropertyChanged(string propertyName = null)
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            }
+
+            // Method to pull data from the static store and update properties
+            public void UpdateFromStore()
+            {
+                // Pull data from LogDataStore (static) into the INPC properties
+                FirstLogLine = LogDataStore.FirstLogLine;
+
+                // Create a new LogEntry instance to ensure deep property change notification
+                // This is safer than trying to notify on nested properties of the static object
+                ParsedFirstLine = new LogEntry
+                {
+                    Timestamp = LogDataStore.ParsedFirstLine.Timestamp,
+                    Level = LogDataStore.ParsedFirstLine.Level,
+                    Message = LogDataStore.ParsedFirstLine.Message
+                };
+            }
+        }
+
+        // FIX: The view model instance, now the DataContext for preview elements
+        public LogPreviewModel PreviewModel { get; set; } = new LogPreviewModel();
+
+
         public LogAnalyzerView()
         {
             InitializeComponent();
 
-            // CRITICAL FIX: Set the DataContext to the type of the static class
-            // This allows us to use simple Path bindings like {Binding FirstLogLine} 
-            // instead of complex, error-prone x:Static bindings.
-            this.DataContext = typeof(LogDataStore);
+            // CRITICAL FIX: Set the DataContext of the control to ITSELF (this).
+            // This allows binding to the non-static PreviewModel property.
+            this.DataContext = this;
 
             // Bind the static ObservableCollection to the DataGrid's ItemsSource
             LogDataGrid.ItemsSource = _logEntries;
@@ -172,14 +218,12 @@ namespace Log_Analyzer_App
             {
                 PythonStatus.Visibility = Visibility.Visible;
                 ParsingChoicePanel.Visibility = Visibility.Collapsed;
-                RunAnalysisButton.Visibility = Visibility.Collapsed; // Hide during processing
             }
             // If a file is selected and we need a decision (show choice panel)
             else if (LogDataStore.SelectedFileForParsing != null)
             {
                 PythonStatus.Visibility = Visibility.Visible;
                 ParsingChoicePanel.Visibility = Visibility.Visible;
-                RunAnalysisButton.Visibility = Visibility.Collapsed; // Hide the 'Run Analysis' placeholder
             }
             // If no file is selected/loaded, or parsing is complete and successful
             else
@@ -187,7 +231,6 @@ namespace Log_Analyzer_App
                 PythonStatus.Visibility = Visibility.Visible;
                 ParsingChoicePanel.Visibility = Visibility.Collapsed;
                 // If log entries exist, show the Run Analysis button for future filtering features
-                RunAnalysisButton.Visibility = _logEntries.Any() ? Visibility.Visible : Visibility.Collapsed;
             }
         }
 
@@ -228,12 +271,11 @@ namespace Log_Analyzer_App
         /// </summary>
         private void TestParsingPatternOnFirstLine()
         {
-            LogDataStore.ParsedFirstLine = new LogEntry
-            {
-                Timestamp = "N/A",
-                Level = "N/A",
-                Message = "No successful match on first line."
-            };
+            // Reset the state object in the static store
+            LogDataStore.ParsedFirstLine.Timestamp = "N/A";
+            LogDataStore.ParsedFirstLine.Level = "N/A";
+            LogDataStore.ParsedFirstLine.Message = "No successful match on first line.";
+
 
             if (string.IsNullOrWhiteSpace(LogDataStore.FirstLogLine) || string.IsNullOrWhiteSpace(LogDataStore.CurrentLogPattern))
             {
@@ -248,6 +290,7 @@ namespace Log_Analyzer_App
 
                 if (match.Success && match.Groups.Count >= 4) // Group 0 is the full match, 1, 2, 3 are the desired captures
                 {
+                    // Update the properties of the LogEntry instance in the static store
                     LogDataStore.ParsedFirstLine.Timestamp = match.Groups[1].Value.Trim();
                     LogDataStore.ParsedFirstLine.Level = match.Groups[2].Value.Trim();
                     LogDataStore.ParsedFirstLine.Message = match.Groups[3].Value.Trim();
@@ -382,10 +425,9 @@ namespace Log_Analyzer_App
                 // 5. Set initial status text
                 LogDataStore.CurrentFilePath = $"File Selected: {Path.GetFileName(openFileDialog.FileName)}";
 
-                // CRITICAL FIX: Instead of individual FindName/UpdateTarget calls (which often fail for static bindings 
-                // and newly created elements), we force a visual update on the main panel itself.
-                ParsingChoicePanel.UpdateLayout();
-                ParsingChoicePanel.InvalidateVisual();
+                // FIX: Instead of fighting the static bindings, update the INPC view model
+                // properties which will automatically notify the UI.
+                PreviewModel.UpdateFromStore();
             }
             // Ensure view is refreshed to show the updated status or pattern choice
             RefreshView();
