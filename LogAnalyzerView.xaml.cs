@@ -8,9 +8,22 @@ using System.Windows.Controls;
 using System.Text.RegularExpressions;
 // Add using for OpenFileDialog
 using Microsoft.Win32;
+// NEW: For Python process execution and JSON handling
+using System.Diagnostics;
+using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace Log_Analyzer_App
 {
+    // --- Model Class for Python JSON output ---
+    // This structure holds the entire JSON response from the Python script.
+    public class PythonParserResponse
+    {
+        public bool Success { get; set; }
+        public List<LogEntry> Data { get; set; }
+        public string Error { get; set; }
+    }
+
     /// <summary>
     /// Static class to hold the application's persistent log data.
     /// Since the views (UserControls) are recreated upon navigation, this global 
@@ -47,7 +60,9 @@ namespace Log_Analyzer_App
             {
                 // Group by Level and count
                 var counts = LogEntries
-                    .GroupBy(e => e.Level)
+                    // Check if Level is not null/empty before grouping
+                    .Where(e => !string.IsNullOrEmpty(e.Level))
+                    .GroupBy(e => e.Level.ToUpper()) // Group by uppercase level for robustness
                     .ToDictionary(g => g.Key, g => (double)g.Count());
 
                 // Update SummaryCounts dictionary safely
@@ -67,8 +82,7 @@ namespace Log_Analyzer_App
         // Reference the static LogEntries collection directly
         private ObservableCollection<LogEntry> _logEntries = LogDataStore.LogEntries;
 
-        // Regex pattern to extract Timestamp, Level, and Message
-        private readonly Regex _logPattern = new Regex(@"^\[(.*?)\]\s*(INFO|WARN|ERROR):\s*(.*)$", RegexOptions.Compiled);
+        // REMOVED: private readonly Regex _logPattern and ParseLogLine are no longer needed.
 
         public LogAnalyzerView()
         {
@@ -92,7 +106,7 @@ namespace Log_Analyzer_App
             if (_logEntries.Any())
             {
                 // File is loaded, update status and counts
-                PythonStatus.Text = "Status: Log file ready for analysis.";
+                PythonStatus.Text = $"Status: Log file ready for analysis. ({_logEntries.Count} entries)";
                 UpdateSummaryStatistics();
             }
             else
@@ -109,82 +123,132 @@ namespace Log_Analyzer_App
         }
 
         /// <summary>
-        /// Prompts the user to select a log file, then loads and parses the content.
+        /// Prompts the user to select a log file, then loads and parses the content
+        /// using the external Python script.
         /// </summary>
-        private void LoadFileButton_Click(object sender, RoutedEventArgs e)
+        private async void LoadFileButton_Click(object sender, RoutedEventArgs e)
         {
-            // 1. Initialize OpenFileDialog
             OpenFileDialog openFileDialog = new OpenFileDialog();
             openFileDialog.Filter = "Log Files (*.log, *.txt)|*.log;*.txt|All files (*.*)|*.*";
             openFileDialog.Title = "Select a Log File for Analysis";
 
-            // 2. Show dialog and get result
             bool? result = openFileDialog.ShowDialog();
 
             if (result == true)
             {
-                // File path selected by the user
                 string filePath = openFileDialog.FileName;
+
+                // 1. Update UI to show processing is starting
+                LogDataStore.CurrentFilePath = "Processing file via Python parser...";
+                PythonStatus.Text = "Status: Running Python parser... Please wait.";
+                RefreshView();
+                LoadFileButton.IsEnabled = false; // Disable button during processing
 
                 try
                 {
-                    // Clear static collection before loading new data
+                    // 2. Execute Python script and get the list of log entries
+                    List<LogEntry> logEntries = await Task.Run(() => RunPythonParser(filePath));
+
+                    // 3. Clear static collection and replace with new data
                     _logEntries.Clear();
-
-                    // Read all lines from the file
-                    string[] lines = File.ReadAllLines(filePath);
-
-                    // Parse lines and add to the persistent collection
-                    foreach (var line in lines)
+                    foreach (var entry in logEntries)
                     {
-                        ParseLogLine(line);
+                        _logEntries.Add(entry);
                     }
 
-                    // *** CRITICAL STEP: Calculate summary counts after successful load ***
+                    // 4. Update persistent data and calculate counts
                     LogDataStore.CalculateSummaryCounts();
-
-                    // Store persistent data
                     LogDataStore.CurrentFilePath = $"File Loaded: {filePath} ({_logEntries.Count} lines)";
 
-                    // Update UI elements after loading
+                    // 5. Final UI update
                     RefreshView();
                 }
                 catch (Exception ex)
                 {
-                    LogDataStore.CurrentFilePath = $"Error reading file: {ex.Message}";
+                    // Handle errors during execution or JSON deserialization
+                    LogDataStore.CurrentFilePath = $"Error during analysis: {ex.Message}";
+                    _logEntries.Clear(); // Clear any corrupted data
+                    LogDataStore.CalculateSummaryCounts(); // Reset counts
                     RefreshView();
 
-                    // Use a custom message box instead of MessageBox.Show if running in an environment without native dialogs.
-                    // For standard WPF, MessageBox.Show is acceptable here.
-                    MessageBox.Show($"An error occurred while reading the file: {ex.Message}", "Processing Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    // Display error to user
+                    MessageBox.Show($"An error occurred during analysis: {ex.Message}", "Python Processing Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                finally
+                {
+                    LoadFileButton.IsEnabled = true; // Re-enable button
                 }
             }
             else
             {
-                // User cancelled the dialog, ensure view is refreshed if no file was loaded prior
                 RefreshView();
             }
         }
 
         /// <summary>
-        /// Parses a single log line using a regular expression and adds it to the collection.
+        /// Executes the external Python parser script and returns a list of LogEntry objects.
         /// </summary>
-        /// <param name="line">The single line of text from the log file.</param>
-        private void ParseLogLine(string line)
+        /// <param name="filePath">The path to the log file to analyze.</param>
+        /// <returns>A List of LogEntry objects.</returns>
+        /// <exception cref="Exception">Throws an exception if the Python process fails or returns an error.</exception>
+        private List<LogEntry> RunPythonParser(string filePath)
         {
-            var match = _logPattern.Match(line);
+            // The Python executable path. We assume 'python' is in the system PATH.
+            string pythonExecutable = "python";
+            // The path to the script file (assumed to be in the same directory as the application executable)
+            // In a production environment, you might need to use a fully qualified path or relative path from CWD.
+            string scriptPath = "log_parser.py";
 
-            if (match.Success)
+            // Build arguments: script path followed by the file path (quoted to handle spaces)
+            string arguments = $"{scriptPath} \"{filePath}\"";
+
+            using (Process process = new Process())
             {
-                // Add to the persistent collection (_logEntries is LogDataStore.LogEntries)
-                _logEntries.Add(new LogEntry
+                process.StartInfo.FileName = pythonExecutable;
+                process.StartInfo.Arguments = arguments;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+                process.StartInfo.CreateNoWindow = true; // Don't show the Python console window
+
+                process.Start();
+
+                // Read the standard output (which contains the JSON result)
+                string jsonOutput = process.StandardOutput.ReadToEnd();
+                // Read any errors from standard error
+                string errorOutput = process.StandardError.ReadToEnd();
+
+                process.WaitForExit();
+
+                if (process.ExitCode != 0 && string.IsNullOrWhiteSpace(jsonOutput))
                 {
-                    Timestamp = match.Groups[1].Value.Trim(),
-                    Level = match.Groups[2].Value.Trim(),
-                    Message = match.Groups[3].Value.Trim()
-                });
+                    // If the process failed and returned an error on stderr (e.g., Python not found)
+                    throw new Exception($"Python process failed with exit code {process.ExitCode}. Error: {errorOutput}");
+                }
+
+                // Try to deserialize the JSON output
+                PythonParserResponse response;
+                try
+                {
+                    // Deserialize the entire response object (which includes success/error fields)
+                    response = JsonSerializer.Deserialize<PythonParserResponse>(jsonOutput, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true // Allow flexible property matching (e.g., 'Timestamp' vs 'timestamp')
+                    });
+                }
+                catch (JsonException ex)
+                {
+                    throw new Exception($"Failed to parse JSON output from Python. Raw Output: '{jsonOutput}'. JSON Error: {ex.Message}");
+                }
+
+                // Check the 'success' flag within the JSON response
+                if (!response.Success)
+                {
+                    throw new Exception($"Log parsing failed within Python script. Reason: {response.Error}");
+                }
+
+                return response.Data ?? new List<LogEntry>(); // Return parsed data or empty list
             }
-            // Ignore lines that do not match the expected pattern
         }
 
         /// <summary>

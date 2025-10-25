@@ -15,4 +15,10 @@
     <PackageReference Include="MaterialDesignColors" Version="5.3.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="log_parser.py">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
