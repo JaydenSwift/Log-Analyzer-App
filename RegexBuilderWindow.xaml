@@ -4,9 +4,10 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        xmlns:local="clr-namespace:Log_Analyzer_App"
         mc:Ignorable="d"
         Title="Custom Regex Pattern Builder" 
-        Height="650" Width="800" 
+        Height="800" Width="800" 
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -32,10 +33,11 @@
             <TextBlock Grid.Row="0" Text="Custom Log Pattern Configuration" FontSize="24" FontWeight="Bold" Margin="0 0 0 15" Foreground="{DynamicResource SecondaryHueMidBrush}"/>
 
             <!-- 1. Log Line Preview -->
+            <!-- FIX: Binding mode set to OneWay to fix the XamlParseException reported earlier -->
             <materialDesign:Card Grid.Row="1" UniformCornerRadius="8" Padding="15" Margin="0 0 0 15" Background="{DynamicResource MaterialDesignLightBackground}">
                 <StackPanel>
                     <TextBlock Text="Log Line Sample (Read-Only)" FontWeight="SemiBold" Opacity="0.8" Margin="0 0 0 5"/>
-                    <TextBox Text="{Binding LogLinePreview}"
+                    <TextBox Text="{Binding LogLinePreview, Mode=OneWay}"
                              TextWrapping="Wrap"
                              FontFamily="Consolas" 
                              IsReadOnly="True"
@@ -86,38 +88,54 @@
 
                 <!-- Match Preview (Left) -->
                 <materialDesign:Card Grid.Column="0" UniformCornerRadius="8" Padding="15" Margin="0 0 10 0">
-                    <StackPanel>
-                        <TextBlock Text="2. Real-Time Match Preview (Groups 1, 2, 3)" FontWeight="Bold" Margin="0 0 0 10"/>
-                        <TextBlock x:Name="MatchStatusTextBlock" Text="Status: Waiting for test..." Margin="0 0 0 10" Foreground="Gray"/>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <TextBlock Text="2. Real-Time Match Preview (Groups 1, 2, 3...)" FontWeight="Bold" Margin="0 0 0 10"/>
+                            <TextBlock x:Name="MatchStatusTextBlock" Text="Status: Waiting for test..." Margin="0 0 0 10" Foreground="Gray"/>
 
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
+                            <!-- Dynamic Field Naming Section -->
+                            <TextBlock Text="Capture Group Naming:" FontWeight="SemiBold" Opacity="0.8" Margin="0 5 0 5" 
+                                       ToolTip="Give each capture group a descriptive column name."/>
 
-                            <TextBlock Text="Timestamp (Group 1):" Grid.Row="0" Grid.Column="0" FontWeight="SemiBold" Margin="0 0 10 5" VerticalAlignment="Top"/>
-                            <TextBlock Text="{Binding ParsedResult.Timestamp}" Grid.Row="0" Grid.Column="1" TextWrapping="Wrap" Margin="0 0 0 5" FontFamily="Consolas"/>
+                            <!-- ItemsControl to dynamically generate naming inputs for each group -->
+                            <ItemsControl ItemsSource="{Binding FieldDefinitions}" Margin="0 0 0 15">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0 0 0 5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
 
-                            <TextBlock Text="Level (Group 2):" Grid.Row="1" Grid.Column="0" FontWeight="SemiBold" Margin="0 0 10 5" VerticalAlignment="Top"/>
-                            <TextBlock Text="{Binding ParsedResult.Level}" Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" Margin="0 0 0 5" FontFamily="Consolas"/>
+                                            <!-- Group Index/Preview Value -->
+                                            <TextBlock Grid.Column="0" Text="{Binding GroupIndex, StringFormat='Group {0}:'}" FontWeight="SemiBold" Margin="0 0 10 0" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding PreviewValue, StringFormat='&quot;{0}&quot;'}" Opacity="0.7" VerticalAlignment="Center" FontFamily="Consolas" TextTrimming="CharacterEllipsis" MaxWidth="150"/>
 
-                            <TextBlock Text="Message (Group 3):" Grid.Row="2" Grid.Column="0" FontWeight="SemiBold" Margin="0 0 10 5" VerticalAlignment="Top"/>
-                            <TextBlock Text="{Binding ParsedResult.Message}" Grid.Row="2" Grid.Column="1" TextWrapping="Wrap" Margin="0 0 0 5"/>
-                        </Grid>
-                    </StackPanel>
+                                            <!-- Name Input -->
+                                            <TextBox Grid.Column="2" 
+                                                     Text="{Binding FieldName, UpdateSourceTrigger=PropertyChanged}"
+                                                     materialDesign:HintAssist.Hint="Column Name (e.g., Timestamp, Level)"
+                                                     Margin="10 0 0 0"
+                                                     VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <!-- End Dynamic Field Naming Section -->
+
+                        </StackPanel>
+                    </ScrollViewer>
                 </materialDesign:Card>
 
                 <!-- Regex Help (Right) -->
                 <materialDesign:Card Grid.Column="1" UniformCornerRadius="8" Padding="15" Margin="10 0 0 0" Background="{DynamicResource MaterialDesignLightBackground}">
                     <StackPanel>
                         <TextBlock Text="Regex Quick Help" FontWeight="Bold" Margin="0 0 0 10"/>
-                        <TextBlock Text="You need exactly three capture groups (brackets) for Timestamp, Level, and Message, in that order." TextWrapping="Wrap" FontSize="12" Opacity="0.9" Margin="0 0 0 10"/>
+                        <TextBlock Text="Every set of parentheses '(...)' is a capture group that becomes a column. You must name all captured groups." TextWrapping="Wrap" FontSize="12" Opacity="0.9" Margin="0 0 0 10"/>
+
+                        <TextBlock Text="Mandatory Fields:" FontWeight="SemiBold" Margin="0 0 0 5"/>
+                        <TextBlock Text="For charting and filtering to work, please ensure your first three named columns are: 1. Timestamp, 2. Level, and 3. Message." TextWrapping="Wrap" FontSize="12" Opacity="0.9" Margin="0 0 0 10"/>
 
                         <TextBlock Text="Common Groups:" FontWeight="SemiBold" Margin="0 0 0 5"/>
                         <TextBlock Text="• (.*?) - Any content (non-greedy)" FontSize="12" FontFamily="Consolas"/>

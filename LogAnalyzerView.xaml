@@ -61,17 +61,20 @@
 
                     <DataGrid Grid.Row="1" 
                               x:Name="LogDataGrid"
-                              AutoGenerateColumns="False" 
+                              AutoGenerateColumns="True"  
                               CanUserAddRows="False" 
                               HeadersVisibility="Column"
                               materialDesign:DataGridAssist.CellPadding="10"
                               materialDesign:DataGridAssist.ColumnHeaderPadding="20 10"
-                              Margin="15 0 15 15" SelectionChanged="DataGrid_SelectionChanged">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Timestamp" Width="Auto" IsReadOnly="True" Binding="{Binding Timestamp}"/>
-                            <DataGridTextColumn Header="Level" Width="Auto" IsReadOnly="True" Binding="{Binding Level}"/>
-                            <DataGridTextColumn Header="Message" Width="*" IsReadOnly="True" Binding="{Binding Message}"/>
-                        </DataGrid.Columns>
+                              Margin="15 0 15 15" 
+                              SelectionChanged="DataGrid_SelectionChanged">
+                        <!-- 
+                        CRITICAL FIX: Removed static DataGrid.Columns definition. 
+                        By setting AutoGenerateColumns="True", the DataGrid will 
+                        automatically create columns based on the keys in the 
+                        LogEntry.Fields dictionary when the ObservableCollection 
+                        is populated by the parser.
+                        -->
                     </DataGrid>
                 </Grid>
             </materialDesign:Card>
@@ -79,7 +82,6 @@
         </StackPanel>
 
         <!-- Analysis & Filters Sidebar (Right Column) -->
-        <!-- FIX: Wrap the StackPanel content in a ScrollViewer so the sidebar is scrollable -->
         <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
             <StackPanel>
                 <TextBlock Text="Analysis &amp; Processing" FontSize="20" FontWeight="SemiBold" Margin="0 0 0 10"/>
@@ -89,12 +91,11 @@
                     <StackPanel>
                         <TextBlock Text="Log File Parsing Configuration" FontWeight="Bold" Margin="0 0 0 10"/>
 
-                        <!-- New: Parsing Pattern Choice Panel (Visible when a file is selected but not yet parsed) -->
+                        <!-- Parsing Pattern Choice Panel (Visible when a file is selected but not yet parsed) -->
                         <StackPanel x:Name="ParsingChoicePanel" Visibility="Collapsed">
 
                             <!-- First Line Preview -->
                             <TextBlock Text="First Non-Empty Line Preview:" FontWeight="SemiBold" Opacity="0.8" Margin="0 0 0 5"/>
-                            <!-- FIX: Binding now points to the non-static PreviewModel property -->
                             <TextBox Text="{Binding Path=PreviewModel.FirstLogLine}" 
                                      x:Name="FirstLogLineTextBox"
                                      FontFamily="Consolas" 
@@ -126,30 +127,36 @@
                             <!-- Parsed Fields Preview -->
                             <TextBlock Text="How the First Line is Split:" FontWeight="SemiBold" Opacity="0.8" Margin="0 0 0 5"/>
                             <Grid Margin="0 0 0 10">
+                                <!-- Use a 2-column layout to show field name and value -->
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
+
+                                <!--
+                                CRITICAL FIX: The LogEntry now has dynamic fields, but the preview panel 
+                                must show *something*. Since the `LogEntry` still exposes Timestamp, Level, 
+                                and Message as derived properties (FieldOrder[0], [1], [2]), we can safely 
+                                bind to those for preview, provided the user names the first three fields 
+                                appropriately.
+                                -->
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
-                                <TextBlock Text="Timestamp:" Grid.Row="0" Grid.Column="0" FontWeight="SemiBold" Margin="0 0 10 5" VerticalAlignment="Top"/>
-                                <!-- FIX: Binding now points to nested property on the non-static PreviewModel -->
+                                <TextBlock Text="Timestamp (Field 1):" Grid.Row="0" Grid.Column="0" FontWeight="SemiBold" Margin="0 0 10 5" VerticalAlignment="Top"/>
                                 <TextBlock Text="{Binding Path=PreviewModel.ParsedFirstLine.Timestamp}" 
                                            x:Name="TimestampTextBlock"
                                            Grid.Row="0" Grid.Column="1" TextWrapping="Wrap" Margin="0 0 0 5" FontFamily="Consolas"/>
 
-                                <TextBlock Text="Level:" Grid.Row="1" Grid.Column="0" FontWeight="SemiBold" Margin="0 0 10 5" VerticalAlignment="Top"/>
-                                <!-- FIX: Binding now points to nested property on the non-static PreviewModel -->
+                                <TextBlock Text="Level (Field 2):" Grid.Row="1" Grid.Column="0" FontWeight="SemiBold" Margin="0 0 10 5" VerticalAlignment="Top"/>
                                 <TextBlock Text="{Binding Path=PreviewModel.ParsedFirstLine.Level}" 
                                            x:Name="LevelTextBlock"
                                            Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" Margin="0 0 0 5" FontFamily="Consolas"/>
 
-                                <TextBlock Text="Message:" Grid.Row="2" Grid.Column="0" FontWeight="SemiBold" Margin="0 0 10 5" VerticalAlignment="Top"/>
-                                <!-- FIX: Binding now points to nested property on the non-static PreviewModel -->
+                                <TextBlock Text="Message (Field 3):" Grid.Row="2" Grid.Column="0" FontWeight="SemiBold" Margin="0 0 10 5" VerticalAlignment="Top"/>
                                 <TextBlock Text="{Binding Path=PreviewModel.ParsedFirstLine.Message}" 
                                            x:Name="MessageTextBlock"
                                            Grid.Row="2" Grid.Column="1" TextWrapping="Wrap" Margin="0 0 0 5"/>
@@ -164,7 +171,6 @@
                                     Click="UseDefaultPattern_Click"
                                     Margin="0 5 0 5"/>
 
-                            <!-- UPDATED: Placeholder button renamed to reflect actual functionality -->
                             <Button Content="CREATE CUSTOM REGEX PATTERN" 
                                     Style="{StaticResource MaterialDesignFlatButton}" 
                                     Foreground="{DynamicResource PrimaryHueMidBrush}"
@@ -189,14 +195,10 @@
                     <StackPanel>
                         <TextBlock Text="Summary Statistics" FontWeight="Bold" Margin="0 0 0 10"/>
                         <Grid>
-                            <!-- FIX: Updated to a 3-column layout for clear separation of Icon, Label, and Value -->
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <!-- Column 0: Icon -->
                                 <ColumnDefinition Width="*"/>
-                                <!-- Column 1: Label Text (takes remaining space) -->
                                 <ColumnDefinition Width="Auto"/>
-                                <!-- Column 2: Value Count -->
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>

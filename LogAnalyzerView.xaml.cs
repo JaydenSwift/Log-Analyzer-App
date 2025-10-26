@@ -6,32 +6,36 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Text.RegularExpressions;
-// Add using for OpenFileDialog
 using Microsoft.Win32;
-// NEW: For Python process execution and JSON handling
 using System.Diagnostics;
 using System.Text.Json;
 using System.Threading.Tasks;
-// NEW: For forcing UI updates on static bindings
 using System.Windows.Data;
 using System.Windows.Input;
-// NEW: For INotifyPropertyChanged implementation
 using System.ComponentModel;
 
 namespace Log_Analyzer_App
 {
+    // --- New Model for Storing Pattern and Dynamic Fields ---
+    public class LogPatternDefinition
+    {
+        public string Pattern { get; set; }
+        public string Description { get; set; }
+        // The list of user-defined column names corresponding to regex capture groups (Group 1, 2, 3...)
+        public List<string> FieldNames { get; set; } = new List<string>();
+    }
+
     // --- Model Class for Python JSON output ---
     public class PythonParserResponse
     {
         public bool Success { get; set; }
+        // Data is now a list of LogEntry objects (which contain a dynamic dictionary)
         public List<LogEntry> Data { get; set; }
         public string Error { get; set; }
     }
 
     /// <summary>
     /// Static class to hold the application's persistent log data.
-    /// Since the views (UserControls) are recreated upon navigation, this global 
-    /// persistence layer ensures data survives tab switches.
     /// </summary>
     public static class LogDataStore
     {
@@ -39,29 +43,26 @@ namespace Log_Analyzer_App
         public static ObservableCollection<LogEntry> LogEntries { get; } = new ObservableCollection<LogEntry>();
         // Persistent file path
         public static string CurrentFilePath { get; set; } = "No log file loaded.";
-        // New: Persistent path for a file that is selected but not yet parsed (to handle the new feature)
-        public static string SelectedFileForParsing { get; set; }
+        public static string SelectedFileForParsing { get; set; } = null;
 
-        // New: Default log pattern and the currently active pattern
-        public const string DefaultLogPattern = @"^\[(.*?)\]\s*(INFO|WARN|ERROR):\s*(.*)$";
-        public static string CurrentLogPattern { get; set; } = DefaultLogPattern;
-        public static string CurrentLogPatternDescription { get; set; } = "Default Pattern: Captures [Timestamp], Level (INFO|WARN|ERROR), and Message.";
+        // NEW: Centralized pattern definition store
+        public static LogPatternDefinition CurrentPatternDefinition { get; set; }
+
+        // Default pattern definition
+        public static LogPatternDefinition DefaultPatternDefinition = new LogPatternDefinition
+        {
+            Pattern = @"^\[(.*?)\]\s*(INFO|WARN|ERROR):\s*(.*)$",
+            Description = "Default Pattern: Captures [Timestamp], Level (INFO|WARN|ERROR), and Message.",
+            FieldNames = new List<string> { "Timestamp", "Level", "Message" }
+        };
 
         // NEW: Stores the first non-empty line of the selected file for preview
         public static string FirstLogLine { get; set; } = string.Empty;
 
         // NEW: Stores the result of parsing the first line with the current pattern
-        // We revert this back to a standard LogEntry instance
-        public static LogEntry ParsedFirstLine { get; set; } = new LogEntry // <-- FIX: Changed '{ get; set; = new LogEntry' to '{ get; set; } = new LogEntry'
-        {
-            Timestamp = "N/A",
-            Level = "N/A",
-            Message = "No successful match on first line."
-        };
+        public static LogEntry ParsedFirstLine { get; set; } = new LogEntry();
 
-
-        // --- New persistent statistics properties for charts/summary ---
-        // Stored as Dictionary<string, double> to be easily consumable by LiveCharts
+        // New persistent statistics properties for charts/summary
         public static Dictionary<string, double> SummaryCounts { get; } = new Dictionary<string, double>
         {
             { "INFO", 0 },
@@ -69,9 +70,14 @@ namespace Log_Analyzer_App
             { "ERROR", 0 }
         };
 
+        static LogDataStore()
+        {
+            // Initialize the current pattern with the default one
+            CurrentPatternDefinition = DefaultPatternDefinition;
+        }
+
         /// <summary>
         /// Calculates the count for each log level and stores it in SummaryCounts.
-        /// This method should be called immediately after LogEntries is populated.
         /// </summary>
         public static void CalculateSummaryCounts()
         {
@@ -80,30 +86,29 @@ namespace Log_Analyzer_App
             SummaryCounts["WARN"] = 0;
             SummaryCounts["ERROR"] = 0;
 
+            // Use the Level property of LogEntry, which is derived from the Fields dictionary
             if (LogEntries.Any())
             {
                 // Group by Level and count
                 var counts = LogEntries
                     // Check if Level is not null/empty before grouping
-                    .Where(e => !string.IsNullOrEmpty(e.Level))
+                    .Where(e => !string.IsNullOrEmpty(e.Level) && e.Level != "N/A")
                     .GroupBy(e => e.Level.ToUpper()) // Group by uppercase level for robustness
                     .ToDictionary(g => g.Key, g => (double)g.Count());
 
                 // Update SummaryCounts dictionary safely
-                if (counts.ContainsKey("INFO")) SummaryCounts["INFO"] = counts.ContainsKey("INFO") ? counts["INFO"] : 0;
-                if (counts.ContainsKey("WARN")) SummaryCounts["WARN"] = counts.ContainsKey("WARN") ? counts["WARN"] : 0;
-                if (counts.ContainsKey("ERROR")) SummaryCounts["ERROR"] = counts.ContainsKey("ERROR") ? counts["ERROR"] : 0;
+                if (counts.ContainsKey("INFO")) SummaryCounts["INFO"] = counts["INFO"];
+                if (counts.ContainsKey("WARN")) SummaryCounts["WARN"] = counts["WARN"];
+                if (counts.ContainsKey("ERROR")) SummaryCounts["ERROR"] = counts["ERROR"];
             }
         }
     }
 
     /// <summary>
     /// Interaction logic for LogAnalyzerView.xaml
-    /// This is the primary view for displaying log data.
     /// </summary>
     public partial class LogAnalyzerView : UserControl
     {
-        // Reference the static LogEntries collection directly
         private ObservableCollection<LogEntry> _logEntries = LogDataStore.LogEntries;
 
         // FIX: Non-static class to hold preview binding data and implement INotifyPropertyChanged
@@ -118,7 +123,6 @@ namespace Log_Analyzer_App
                 set { _firstLogLine = value; OnPropertyChanged(nameof(FirstLogLine)); }
             }
 
-            // Using LogEntry here to hold the three parsed fields
             public LogEntry ParsedFirstLine
             {
                 get => _parsedFirstLine;
@@ -133,23 +137,31 @@ namespace Log_Analyzer_App
             }
 
             // Method to pull data from the static store and update properties
-            public void UpdateFromStore()
+            public void UpdateFromStore(List<string> fieldOrder = null)
             {
-                // Pull data from LogDataStore (static) into the INPC properties
                 FirstLogLine = LogDataStore.FirstLogLine;
 
                 // Create a new LogEntry instance to ensure deep property change notification
-                // This is safer than trying to notify on nested properties of the static object
+                // and assign the correct field order for derived properties
                 ParsedFirstLine = new LogEntry
                 {
-                    Timestamp = LogDataStore.ParsedFirstLine.Timestamp,
-                    Level = LogDataStore.ParsedFirstLine.Level,
-                    Message = LogDataStore.ParsedFirstLine.Message
+                    FieldOrder = fieldOrder ?? LogDataStore.CurrentPatternDefinition.FieldNames
                 };
+
+                // The TestParsingPatternOnFirstLine() method now correctly populates
+                // the Fields dictionary in LogDataStore.ParsedFirstLine.
+                // We copy the results over to the INPC instance here for binding.
+                ParsedFirstLine.Fields.Clear();
+                foreach (var kvp in LogDataStore.ParsedFirstLine.Fields)
+                {
+                    ParsedFirstLine.Fields.Add(kvp.Key, kvp.Value);
+                }
+
+                // Manually fire property change notification
+                OnPropertyChanged(nameof(ParsedFirstLine));
             }
         }
 
-        // FIX: The view model instance, now the DataContext for preview elements
         public LogPreviewModel PreviewModel { get; set; } = new LogPreviewModel();
 
 
@@ -157,19 +169,79 @@ namespace Log_Analyzer_App
         {
             InitializeComponent();
 
-            // CRITICAL FIX: Set the DataContext of the control to ITSELF (this).
-            // This allows binding to the non-static PreviewModel property.
             this.DataContext = this;
 
             // Bind the static ObservableCollection to the DataGrid's ItemsSource
             LogDataGrid.ItemsSource = _logEntries;
 
+            // NEW: Subscribe to the AutoGeneratingColumn event to customize dynamic column creation
+            LogDataGrid.AutoGeneratingColumn += LogDataGrid_AutoGeneratingColumn;
+
             // Update UI with persistent data on initialization
             RefreshView();
 
-            // Initialize the visibility state for the new feature
             ShowParserStatus(false);
         }
+
+        /// <summary>
+        /// Handles the DataGrid's AutoGeneratingColumn event to control which columns are shown 
+        /// by canceling internal properties.
+        /// </summary>
+        private void LogDataGrid_AutoGeneratingColumn(object sender, DataGridAutoGeneratingColumnEventArgs e)
+        {
+            string header = e.Column.Header.ToString();
+
+            // Explicitly cancel internal/derived properties that are now hidden via [Browsable(false)] in LogEntry.cs
+            // We cancel here because DataGrid.AutoGenerateColumns=True is still set in XAML
+            if (header == nameof(LogEntry.Fields) ||
+                header == nameof(LogEntry.FieldOrder) ||
+                header == nameof(LogEntry.Timestamp) ||
+                header == nameof(LogEntry.Level) ||
+                header == nameof(LogEntry.Message))
+            {
+                e.Cancel = true;
+                return;
+            }
+        }
+
+        /// <summary>
+        /// NEW: Manually creates and configures the DataGrid columns based on the user's current pattern definition.
+        /// </summary>
+        private void SetupDynamicColumns()
+        {
+            // Clear all existing columns before setting up the new ones
+            LogDataGrid.Columns.Clear();
+
+            List<string> fieldNames = LogDataStore.CurrentPatternDefinition.FieldNames;
+
+            // Check if there are field names to display
+            if (!fieldNames.Any())
+            {
+                // Add a single "Message" column if no fields are defined (fallback/error state)
+                fieldNames = new List<string> { "Message" };
+            }
+
+            // Iterate through the user-defined field names in their correct order
+            foreach (string fieldName in fieldNames)
+            {
+                // Create a new TextColumn
+                var column = new DataGridTextColumn
+                {
+                    Header = fieldName,
+                    // Give Timestamp/Level a fixed width and Message a star width for better default appearance
+                    Width = (fieldName == "Timestamp" || fieldName == "Level")
+                        ? DataGridLength.Auto
+                        : new DataGridLength(1, DataGridLengthUnitType.Star),
+                    IsReadOnly = true,
+                    // Set the binding path to look into the LogEntry's Fields dictionary
+                    Binding = new Binding($"Fields[{fieldName}]")
+                };
+
+                // Add the column to the DataGrid
+                LogDataGrid.Columns.Add(column);
+            }
+        }
+
 
         /// <summary>
         /// Updates the view's display elements (FilePath, Status, Counts) 
@@ -180,8 +252,9 @@ namespace Log_Analyzer_App
             FilePathTextBlock.Text = LogDataStore.CurrentFilePath;
 
             // Update the pattern display elements (only visible when a file is selected)
-            PatternDisplayTextBlock.Text = LogDataStore.CurrentLogPattern;
-            PatternDescriptionTextBlock.Text = LogDataStore.CurrentLogPatternDescription;
+            PatternDisplayTextBlock.Text = LogDataStore.CurrentPatternDefinition.Pattern;
+            // FIX: Removed duplicate CurrentPatternDefinition access
+            PatternDescriptionTextBlock.Text = LogDataStore.CurrentPatternDefinition.Description;
 
             if (_logEntries.Any())
             {
@@ -201,7 +274,7 @@ namespace Log_Analyzer_App
         }
 
         /// <summary>
-        /// New helper to control visibility of the parsing prompt/status UI
+        /// Helper to control visibility of the parsing prompt/status UI
         /// based on the application state.
         /// </summary>
         /// <param name="isParsing">True if the Python process is currently running.</param>
@@ -231,8 +304,6 @@ namespace Log_Analyzer_App
         /// <summary>
         /// Attempts to read the first non-empty line of the file for preview purposes.
         /// </summary>
-        /// <param name="filePath">The path to the selected file.</param>
-        /// <returns>The first non-empty line, or an empty string on failure.</returns>
         private string GetFirstLogLine(string filePath)
         {
             try
@@ -252,8 +323,6 @@ namespace Log_Analyzer_App
             }
             catch (Exception ex)
             {
-                // In a real application, you might want better logging, but for now, 
-                // we'll just return empty and log to console.
                 Console.WriteLine($"Error reading first line: {ex.Message}");
                 return string.Empty;
             }
@@ -261,44 +330,55 @@ namespace Log_Analyzer_App
 
         /// <summary>
         /// Tests the currently suggested pattern against the first line of the log.
-        /// This is done purely in C# to give immediate feedback.
         /// </summary>
         private void TestParsingPatternOnFirstLine()
         {
             // Reset the state object in the static store
-            LogDataStore.ParsedFirstLine.Timestamp = "N/A";
-            LogDataStore.ParsedFirstLine.Level = "N/A";
-            LogDataStore.ParsedFirstLine.Message = "No successful match on first line.";
+            LogDataStore.ParsedFirstLine.Fields.Clear();
+            LogDataStore.ParsedFirstLine.FieldOrder = LogDataStore.CurrentPatternDefinition.FieldNames;
 
+            string pattern = LogDataStore.CurrentPatternDefinition.Pattern;
+            List<string> fieldNames = LogDataStore.CurrentPatternDefinition.FieldNames;
 
-            if (string.IsNullOrWhiteSpace(LogDataStore.FirstLogLine) || string.IsNullOrWhiteSpace(LogDataStore.CurrentLogPattern))
+            if (string.IsNullOrWhiteSpace(LogDataStore.FirstLogLine) || string.IsNullOrWhiteSpace(pattern))
             {
-                // Nothing to test
                 return;
             }
 
             try
             {
-                var regex = new Regex(LogDataStore.CurrentLogPattern);
+                var regex = new Regex(pattern);
                 Match match = regex.Match(LogDataStore.FirstLogLine);
 
-                if (match.Success && match.Groups.Count >= 4) // Group 0 is the full match, 1, 2, 3 are the desired captures
+                // Group count check: match.Groups.Count is Group 0 (full match) + N capture groups.
+                // We compare this to the count of expected field names (N capture groups).
+                if (match.Success && match.Groups.Count - 1 == fieldNames.Count && fieldNames.Count > 0)
                 {
-                    // Update the properties of the LogEntry instance in the static store
-                    LogDataStore.ParsedFirstLine.Timestamp = match.Groups[1].Value.Trim();
-                    LogDataStore.ParsedFirstLine.Level = match.Groups[2].Value.Trim();
-                    LogDataStore.ParsedFirstLine.Message = match.Groups[3].Value.Trim();
+                    // Match the capture groups (starting from 1) to the user-defined field names
+                    for (int i = 0; i < fieldNames.Count; i++)
+                    {
+                        string fieldName = fieldNames[i];
+                        string fieldValue = match.Groups[i + 1].Value.Trim();
+
+                        LogDataStore.ParsedFirstLine.Fields[fieldName] = fieldValue;
+                    }
+                }
+                else
+                {
+                    // If parsing failed or groups mismatch, set a generic error message
+                    LogDataStore.ParsedFirstLine.Fields.Clear();
+                    LogDataStore.ParsedFirstLine.Fields["Message"] = "Error: Pattern mismatch or capture groups count is incorrect.";
                 }
             }
             catch (ArgumentException)
             {
-                // Invalid regex pattern
-                LogDataStore.ParsedFirstLine.Message = "Error: Invalid Regex Pattern.";
+                LogDataStore.ParsedFirstLine.Fields.Clear();
+                LogDataStore.ParsedFirstLine.Fields["Message"] = "Error: Invalid Regex Pattern.";
             }
             catch (Exception)
             {
-                // Other unexpected error during match
-                LogDataStore.ParsedFirstLine.Message = "Error: Matching failed.";
+                LogDataStore.ParsedFirstLine.Fields.Clear();
+                LogDataStore.ParsedFirstLine.Fields["Message"] = "Error: Matching failed.";
             }
         }
 
@@ -312,8 +392,7 @@ namespace Log_Analyzer_App
         private void UseDefaultPattern_Click(object sender, RoutedEventArgs e)
         {
             // Ensure the default pattern is active
-            LogDataStore.CurrentLogPattern = LogDataStore.DefaultLogPattern;
-            LogDataStore.CurrentLogPatternDescription = "Default Pattern: Captures [Timestamp], Level (INFO|WARN|ERROR), and Message.";
+            LogDataStore.CurrentPatternDefinition = LogDataStore.DefaultPatternDefinition;
 
             // Start the parsing process
             StartParsingWithPattern();
@@ -324,18 +403,16 @@ namespace Log_Analyzer_App
         /// </summary>
         private void CustomPattern_Click(object sender, RoutedEventArgs e)
         {
-            // Ensure we have a file selected before opening the builder
             if (string.IsNullOrWhiteSpace(LogDataStore.SelectedFileForParsing) || string.IsNullOrWhiteSpace(LogDataStore.FirstLogLine))
             {
                 MessageBox.Show("Please load a log file first to provide a line sample for the Regex Builder.", "Missing Log File", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            // Pass the current active pattern/description to pre-fill the modal
+            // Pass the current active pattern definition to pre-fill the modal
             var builderWindow = new RegexBuilderWindow(
                 LogDataStore.FirstLogLine,
-                LogDataStore.CurrentLogPattern,
-                LogDataStore.CurrentLogPatternDescription
+                LogDataStore.CurrentPatternDefinition
             );
 
             // Show the dialog modally and check the result
@@ -343,9 +420,8 @@ namespace Log_Analyzer_App
             {
                 // The user clicked "Save and Use Pattern"
 
-                // 1. Update persistent store with the new pattern
-                LogDataStore.CurrentLogPattern = builderWindow.CustomRegex;
-                LogDataStore.CurrentLogPatternDescription = builderWindow.PatternDescription;
+                // 1. Update persistent store with the new pattern definition
+                LogDataStore.CurrentPatternDefinition = builderWindow.FinalPatternDefinition;
 
                 // 2. Re-test and update the UI preview to reflect the chosen custom pattern
                 TestParsingPatternOnFirstLine();
@@ -354,7 +430,6 @@ namespace Log_Analyzer_App
                 // 3. Start parsing immediately with the custom pattern
                 StartParsingWithPattern();
             }
-            // If DialogResult is false or null, the user clicked "Cancel", so we do nothing.
         }
 
         /// <summary>
@@ -363,7 +438,7 @@ namespace Log_Analyzer_App
         private async void StartParsingWithPattern()
         {
             string filePath = LogDataStore.SelectedFileForParsing;
-            string pattern = LogDataStore.CurrentLogPattern;
+            LogPatternDefinition definition = LogDataStore.CurrentPatternDefinition;
 
             // Safety check
             if (string.IsNullOrWhiteSpace(filePath)) return;
@@ -371,32 +446,36 @@ namespace Log_Analyzer_App
             // 1. Update UI to show processing is starting
             LogDataStore.CurrentFilePath = $"Processing file: {Path.GetFileName(filePath)}";
             ShowParserStatus(true); // Show loading spinner/status text, hide pattern choice
-            PythonStatus.Text = $"Status: Running Python parser with pattern: {pattern}... Please wait.";
+            PythonStatus.Text = $"Status: Running Python parser with pattern: {definition.Pattern}... Please wait.";
             FilePathTextBlock.Text = LogDataStore.CurrentFilePath; // Update display
             LoadFileButton.IsEnabled = false; // Disable button during processing
 
             try
             {
                 // 2. Execute Python script and get the list of log entries
-                // Pass the current active pattern to the parser
-                List<LogEntry> logEntries = await Task.Run(() => RunPythonParser(filePath, pattern));
+                // Pass both the regex pattern and the field names (as JSON string)
+                List<LogEntry> logEntries = await Task.Run(() => RunPythonParser(filePath, definition.Pattern, definition.FieldNames));
 
                 // 3. Clear static collection and replace with new data
                 _logEntries.Clear();
+
+                // --- NEW COLUMN LOGIC ---
+                SetupDynamicColumns();
+                // -------------------------
+
                 foreach (var entry in logEntries)
                 {
+                    // CRITICAL: Ensure the FieldOrder is set on every entry for the derived properties to work
+                    entry.FieldOrder = definition.FieldNames;
                     _logEntries.Add(entry);
                 }
 
                 // 4. Update persistent data and calculate counts
                 LogDataStore.CalculateSummaryCounts();
-                LogDataStore.CurrentFilePath = $"File Loaded: {Path.GetFileName(filePath)} ({_logEntries.Count} lines) using pattern: {LogDataStore.CurrentLogPatternDescription}";
-
-                // CRITICAL: Update the preview model after a successful load to ensure it shows the final pattern description
-                PreviewModel.UpdateFromStore();
-
+                LogDataStore.CurrentFilePath = $"File Loaded: {Path.GetFileName(filePath)} ({_logEntries.Count} lines) using pattern: {definition.Description}";
 
                 // 5. Final UI update
+                PreviewModel.UpdateFromStore();
                 RefreshView();
             }
             catch (Exception ex)
@@ -405,6 +484,10 @@ namespace Log_Analyzer_App
                 LogDataStore.CurrentFilePath = $"Error during analysis: {ex.Message}";
                 _logEntries.Clear(); // Clear any corrupted data
                 LogDataStore.CalculateSummaryCounts(); // Reset counts
+
+                // CRITICAL: Clear columns on failure so they don't show old/corrupted data structure
+                LogDataGrid.Columns.Clear();
+
                 RefreshView();
                 // Ensure the status reverts to a non-parsing state to re-enable controls
                 ShowParserStatus(false);
@@ -439,18 +522,13 @@ namespace Log_Analyzer_App
                 // 2. Read the first non-empty line of the file
                 LogDataStore.FirstLogLine = GetFirstLogLine(openFileDialog.FileName);
 
-                // 3. Update UI to prompt for parsing pattern choice
-                // Restore the *last used* pattern for suggestion (either default or custom)
-                // If a log file was successfully loaded previously, the pattern will be persisted.
-
-                // 4. Test the current active pattern against the first line
+                // 3. Test the current active pattern against the first line
                 TestParsingPatternOnFirstLine();
 
-                // 5. Set initial status text
+                // 4. Set initial status text
                 LogDataStore.CurrentFilePath = $"File Selected: {Path.GetFileName(openFileDialog.FileName)}";
 
-                // FIX: Instead of fighting the static bindings, update the INPC view model
-                // properties which will automatically notify the UI.
+                // 5. Update the INPC view model properties.
                 PreviewModel.UpdateFromStore();
             }
             // Ensure view is refreshed to show the updated status or pattern choice
@@ -462,21 +540,22 @@ namespace Log_Analyzer_App
         /// </summary>
         /// <param name="filePath">The path to the log file to analyze.</param>
         /// <param name="logPattern">The custom regex pattern to use for parsing.</param>
+        /// <param name="fieldNames">The user-defined names for the capture groups.</param>
         /// <returns>A List of LogEntry objects.</returns>
-        /// <exception cref="Exception">Throws an exception if the Python process fails or returns an error.</exception>
-        private List<LogEntry> RunPythonParser(string filePath, string logPattern)
+        private List<LogEntry> RunPythonParser(string filePath, string logPattern, List<string> fieldNames)
         {
-            // The Python executable path. We assume 'python' is in the system PATH.
             string pythonExecutable = "python";
-            // The path to the script file
             string scriptPath = "log_parser.py";
 
-            // Build arguments: script path, file path (quoted), and the REGEX PATTERN (quoted)
-            // CRITICAL: The regex pattern is sent as a command line argument.
-            // We use ' escape to ensure the regex string is passed correctly within quotes.
-            string escapedLogPattern = logPattern.Replace("\"", "\\\"");
-            string arguments = $"{scriptPath} \"{filePath}\" \"{escapedLogPattern}\"";
+            // Serialize field names list to a JSON string for passing to Python
+            string fieldNamesJson = JsonSerializer.Serialize(fieldNames);
 
+            // Build arguments: script path, file path, regex pattern, and field names JSON
+            // CRITICAL: Escape both the regex pattern and the field names JSON for the command line.
+            string escapedLogPattern = logPattern.Replace("\"", "\\\"");
+            string escapedFieldNamesJson = fieldNamesJson.Replace("\"", "\\\"");
+
+            string arguments = $"{scriptPath} \"{filePath}\" \"{escapedLogPattern}\" \"{escapedFieldNamesJson}\"";
 
             using (Process process = new Process())
             {
@@ -489,27 +568,22 @@ namespace Log_Analyzer_App
 
                 process.Start();
 
-                // Read the standard output (which contains the JSON result)
                 string jsonOutput = process.StandardOutput.ReadToEnd();
-                // Read any errors from standard error
                 string errorOutput = process.StandardError.ReadToEnd();
 
                 process.WaitForExit();
 
                 if (process.ExitCode != 0 && string.IsNullOrWhiteSpace(jsonOutput))
                 {
-                    // If the process failed and returned an error on stderr (e.g., Python not found)
                     throw new Exception($"Python process failed with exit code {process.ExitCode}. Error: {errorOutput}");
                 }
 
-                // Try to deserialize the JSON output
                 PythonParserResponse response;
                 try
                 {
-                    // Deserialize the entire response object (which includes success/error fields)
                     response = JsonSerializer.Deserialize<PythonParserResponse>(jsonOutput, new JsonSerializerOptions
                     {
-                        PropertyNameCaseInsensitive = true // Allow flexible property matching (e.g., 'Timestamp' vs 'timestamp')
+                        PropertyNameCaseInsensitive = true
                     });
                 }
                 catch (JsonException ex)
@@ -517,7 +591,6 @@ namespace Log_Analyzer_App
                     throw new Exception($"Failed to parse JSON output from Python. Raw Output: '{jsonOutput}'. JSON Error: {ex.Message}");
                 }
 
-                // Check the 'success' flag within the JSON response
                 if (!response.Success)
                 {
                     throw new Exception($"Log parsing failed within Python script. Reason: {response.Error}");
@@ -529,11 +602,9 @@ namespace Log_Analyzer_App
 
         /// <summary>
         /// Calculates and displays the count for each log level in the Summary Statistics section.
-        /// Now uses the persistent counts stored in LogDataStore.
         /// </summary>
         private void UpdateSummaryStatistics(bool clear = false)
         {
-            // If cleared or no entries, reset display.
             if (clear || !LogDataStore.LogEntries.Any())
             {
                 InfoCountText.Text = "0";
@@ -542,7 +613,6 @@ namespace Log_Analyzer_App
                 return;
             }
 
-            // Retrieve and display counts from the central data store
             InfoCountText.Text = LogDataStore.SummaryCounts["INFO"].ToString("N0");
             WarnCountText.Text = LogDataStore.SummaryCounts["WARN"].ToString("N0");
             ErrorCountText.Text = LogDataStore.SummaryCounts["ERROR"].ToString("N0");

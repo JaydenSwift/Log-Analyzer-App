@@ -1,16 +1,38 @@
 ﻿using System;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Input;
-// FIX: The 'using MaterialDesignThemes.Wpf' is kept for other potential uses.
-using MaterialDesignThemes.Wpf;
+using System.Windows.Media;
 
 namespace Log_Analyzer_App
 {
+    // --- Model for dynamic fields in the Regex Builder UI ---
+    public class FieldDefinition : INotifyPropertyChanged
+    {
+        public int GroupIndex { get; set; }
+        public string PreviewValue { get; set; }
+
+        private string _fieldName;
+        public string FieldName
+        {
+            get => _fieldName;
+            set { _fieldName = value; OnPropertyChanged(nameof(FieldName)); }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void OnPropertyChanged(string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+    }
+
     /// <summary>
     /// Interaction logic for RegexBuilderWindow.xaml
-    /// A modal dialog that allows users to create and test custom regex patterns.
+    /// A modal dialog that allows users to create and test custom regex patterns and name the fields.
     /// </summary>
     public partial class RegexBuilderWindow : Window, INotifyPropertyChanged
     {
@@ -35,13 +57,11 @@ namespace Log_Analyzer_App
             set { _patternDescription = value; OnPropertyChanged(nameof(PatternDescription)); }
         }
 
-        // The result of the parsing test against the log line
-        private LogEntry _parsedResult;
-        public LogEntry ParsedResult
-        {
-            get => _parsedResult;
-            set { _parsedResult = value; OnPropertyChanged(nameof(ParsedResult)); }
-        }
+        // The collection that drives the dynamic column naming UI
+        public ObservableCollection<FieldDefinition> FieldDefinitions { get; set; } = new ObservableCollection<FieldDefinition>();
+
+        // Properties to be returned to the main view on save
+        public LogPatternDefinition FinalPatternDefinition { get; private set; }
 
         // --- Constructor and Initialization ---
 
@@ -49,19 +69,29 @@ namespace Log_Analyzer_App
         /// Initializes the modal with the current log pattern and the first log line.
         /// </summary>
         /// <param name="firstLogLine">The first non-empty line of the log file.</param>
-        /// <param name="initialPattern">The currently active pattern (default or last custom).</param>
-        /// <param name="initialDescription">The current description.</param>
-        public RegexBuilderWindow(string firstLogLine, string initialPattern, string initialDescription)
+        /// <param name="initialDefinition">The currently active pattern and field names.</param>
+        public RegexBuilderWindow(string firstLogLine, LogPatternDefinition initialDefinition)
         {
             InitializeComponent();
+            this.DataContext = this;
 
-            // Set initial state from existing values
             LogLinePreview = firstLogLine;
-            CustomRegex = initialPattern;
-            PatternDescription = initialDescription;
+            CustomRegex = initialDefinition.Pattern;
+            PatternDescription = initialDefinition.Description;
 
-            // Initialize the result object
-            ParsedResult = new LogEntry();
+            // Initialize the FieldDefinitions from the initial data
+            if (initialDefinition.FieldNames.Any())
+            {
+                for (int i = 0; i < initialDefinition.FieldNames.Count; i++)
+                {
+                    FieldDefinitions.Add(new FieldDefinition
+                    {
+                        GroupIndex = i + 1,
+                        FieldName = initialDefinition.FieldNames[i],
+                        PreviewValue = "N/A" // Will be updated by TestPattern()
+                    });
+                }
+            }
 
             // Run the test immediately to show initial state
             TestPattern();
@@ -74,12 +104,9 @@ namespace Log_Analyzer_App
         /// </summary>
         private void TestPattern()
         {
-            // Reset state
-            ParsedResult.Timestamp = "N/A";
-            ParsedResult.Level = "N/A";
-            ParsedResult.Message = "N/A";
-            MatchStatusTextBlock.Foreground = System.Windows.Media.Brushes.Gray;
+            MatchStatusTextBlock.Foreground = Brushes.Gray;
             SaveButton.IsEnabled = false;
+            FieldDefinitions.Clear(); // Clear old definitions
 
             if (string.IsNullOrWhiteSpace(LogLinePreview))
             {
@@ -98,45 +125,84 @@ namespace Log_Analyzer_App
                 var regex = new Regex(CustomRegex);
                 Match match = regex.Match(LogLinePreview);
 
-                // Group 0 is the full match. We need groups 1, 2, and 3 for the fields.
-                if (match.Success && match.Groups.Count >= 4)
+                // Group 0 is the full match, so we iterate from 1 up.
+                int totalCaptureGroups = match.Groups.Count - 1;
+
+                if (!match.Success)
                 {
-                    // Update the INPC properties
-                    ParsedResult.Timestamp = match.Groups[1].Value.Trim();
-                    ParsedResult.Level = match.Groups[2].Value.Trim();
-                    ParsedResult.Message = match.Groups[3].Value.Trim();
+                    MatchStatusTextBlock.Text = "Status: NO MATCH found on the log line.";
+                    MatchStatusTextBlock.Foreground = Brushes.Red;
+                    return;
+                }
 
-                    // Force UI update for nested properties (since LogEntry is a reference type)
-                    OnPropertyChanged(nameof(ParsedResult));
+                // Populate FieldDefinitions list with detected groups and their preview values
+                for (int i = 1; i <= totalCaptureGroups; i++)
+                {
+                    // Attempt to pre-fill name from current definitions, or default to a placeholder
+                    string initialName = "";
+                    if (FieldDefinitions.Count >= i)
+                    {
+                        // If the number of groups hasn't changed, keep the name
+                        initialName = FieldDefinitions[i - 1].FieldName;
+                    }
+                    else if (i == 1) initialName = "Timestamp";
+                    else if (i == 2) initialName = "Level";
+                    else if (i == 3) initialName = "Message";
+                    else initialName = $"Column {i}";
 
-                    MatchStatusTextBlock.Text = "Status: SUCCESS! All 3 fields matched.";
-                    // CRITICAL FIX: Use Application.Current.FindResource to guarantee finding the brush defined in App.xaml
-                    MatchStatusTextBlock.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("SecondaryMidBrush");
-                    SaveButton.IsEnabled = true; // Enable saving only on successful 3-group match
+
+                    FieldDefinitions.Add(new FieldDefinition
+                    {
+                        GroupIndex = i,
+                        FieldName = initialName,
+                        PreviewValue = match.Groups[i].Value.Trim()
+                    });
+                }
+
+                // Check for success conditions: at least one group and all groups named
+                if (totalCaptureGroups > 0)
+                {
+                    MatchStatusTextBlock.Text = $"Status: SUCCESS! Found {totalCaptureGroups} capture groups. Please name them all.";
+                    MatchStatusTextBlock.Foreground = Brushes.Blue;
+
+                    // The logic for SaveButton.IsEnabled now moves to a dedicated check
+                    UpdateSaveButtonState();
                 }
                 else
                 {
-                    // Handle partial matches or no match
-                    if (match.Success)
-                    {
-                        MatchStatusTextBlock.Text = $"Status: Match found, but only {match.Groups.Count - 1} capture groups found. Need 3.";
-                        // CRITICAL FIX: Use Application.Current.FindResource
-                        MatchStatusTextBlock.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("WarningBrush");
-                    }
-                    else
-                    {
-                        MatchStatusTextBlock.Text = "Status: NO MATCH found on the log line.";
-                        // CRITICAL FIX: Use Application.Current.FindResource
-                        MatchStatusTextBlock.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("ErrorBrush");
-                    }
+                    MatchStatusTextBlock.Text = "Status: Match found, but NO CAPTURE GROUPS detected (need parentheses '()').";
+                    MatchStatusTextBlock.Foreground = Brushes.Orange;
                 }
+
             }
             catch (ArgumentException)
             {
                 // Invalid regex pattern compilation error
                 MatchStatusTextBlock.Text = "Status: ERROR - Invalid Regex Syntax (check syntax).";
-                // CRITICAL FIX: Use Application.Current.FindResource
-                MatchStatusTextBlock.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("ErrorBrush");
+                MatchStatusTextBlock.Foreground = Brushes.Red;
+            }
+        }
+
+        /// <summary>
+        /// Checks if all necessary conditions for saving are met: 
+        /// 1. Regex is valid and matched. 2. At least one group found. 3. All found groups are named.
+        /// </summary>
+        private void UpdateSaveButtonState()
+        {
+            if (FieldDefinitions.Any() && FieldDefinitions.All(f => !string.IsNullOrWhiteSpace(f.FieldName)))
+            {
+                SaveButton.IsEnabled = true;
+                MatchStatusTextBlock.Text = $"Status: READY TO SAVE. Found {FieldDefinitions.Count} groups, all are named.";
+                MatchStatusTextBlock.Foreground = Brushes.Blue;
+            }
+            else
+            {
+                SaveButton.IsEnabled = false;
+                if (FieldDefinitions.Any())
+                {
+                    MatchStatusTextBlock.Text = $"Status: Please name all {FieldDefinitions.Count} capture groups to enable save.";
+                    MatchStatusTextBlock.Foreground = Brushes.Orange;
+                }
             }
         }
 
@@ -160,6 +226,11 @@ namespace Log_Analyzer_App
             {
                 TestPattern();
             }
+            else
+            {
+                // Re-check save state immediately if a name or the pattern changes
+                UpdateSaveButtonState();
+            }
         }
 
         /// <summary>
@@ -167,12 +238,21 @@ namespace Log_Analyzer_App
         /// </summary>
         private void SaveAndUsePattern_Click(object sender, RoutedEventArgs e)
         {
-            // The button is only enabled if the pattern is valid and produces 3 groups.
-            // We ensure a description is also present, or use a default one.
+            if (!SaveButton.IsEnabled) return;
+
+            // Ensure a description is present
             if (string.IsNullOrWhiteSpace(PatternDescription))
             {
                 PatternDescription = $"Custom Pattern: {CustomRegex}";
             }
+
+            // Create the final data structure to return
+            FinalPatternDefinition = new LogPatternDefinition
+            {
+                Pattern = CustomRegex,
+                Description = PatternDescription,
+                FieldNames = FieldDefinitions.Select(f => f.FieldName.Trim()).ToList()
+            };
 
             this.DialogResult = true;
             this.Close();
