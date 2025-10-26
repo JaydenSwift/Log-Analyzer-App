@@ -52,7 +52,7 @@ namespace Log_Analyzer_App
 
         // NEW: Stores the result of parsing the first line with the current pattern
         // We revert this back to a standard LogEntry instance
-        public static LogEntry ParsedFirstLine { get; set; } = new LogEntry
+        public static LogEntry ParsedFirstLine { get; set; } = new LogEntry // <-- FIX: Changed '{ get; set; = new LogEntry' to '{ get; set; } = new LogEntry'
         {
             Timestamp = "N/A",
             Level = "N/A",
@@ -319,15 +319,42 @@ namespace Log_Analyzer_App
             StartParsingWithPattern();
         }
 
-        // NEW: Handles the click to use a custom pattern (placeholder)
+        /// <summary>
+        /// UPDATED: Handles the click to configure a custom pattern by opening the builder modal.
+        /// </summary>
         private void CustomPattern_Click(object sender, RoutedEventArgs e)
         {
-            // NOTE: Custom Pattern logic is a placeholder as requested.
-            MessageBox.Show(
-                "Custom Pattern Configuration is not yet implemented. Please click 'Use Default Pattern' to continue.",
-                "Feature Placeholder",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            // Ensure we have a file selected before opening the builder
+            if (string.IsNullOrWhiteSpace(LogDataStore.SelectedFileForParsing) || string.IsNullOrWhiteSpace(LogDataStore.FirstLogLine))
+            {
+                MessageBox.Show("Please load a log file first to provide a line sample for the Regex Builder.", "Missing Log File", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Pass the current active pattern/description to pre-fill the modal
+            var builderWindow = new RegexBuilderWindow(
+                LogDataStore.FirstLogLine,
+                LogDataStore.CurrentLogPattern,
+                LogDataStore.CurrentLogPatternDescription
+            );
+
+            // Show the dialog modally and check the result
+            if (builderWindow.ShowDialog() == true)
+            {
+                // The user clicked "Save and Use Pattern"
+
+                // 1. Update persistent store with the new pattern
+                LogDataStore.CurrentLogPattern = builderWindow.CustomRegex;
+                LogDataStore.CurrentLogPatternDescription = builderWindow.PatternDescription;
+
+                // 2. Re-test and update the UI preview to reflect the chosen custom pattern
+                TestParsingPatternOnFirstLine();
+                PreviewModel.UpdateFromStore();
+
+                // 3. Start parsing immediately with the custom pattern
+                StartParsingWithPattern();
+            }
+            // If DialogResult is false or null, the user clicked "Cancel", so we do nothing.
         }
 
         /// <summary>
@@ -363,7 +390,11 @@ namespace Log_Analyzer_App
 
                 // 4. Update persistent data and calculate counts
                 LogDataStore.CalculateSummaryCounts();
-                LogDataStore.CurrentFilePath = $"File Loaded: {Path.GetFileName(filePath)} ({_logEntries.Count} lines) using pattern: {pattern}";
+                LogDataStore.CurrentFilePath = $"File Loaded: {Path.GetFileName(filePath)} ({_logEntries.Count} lines) using pattern: {LogDataStore.CurrentLogPatternDescription}";
+
+                // CRITICAL: Update the preview model after a successful load to ensure it shows the final pattern description
+                PreviewModel.UpdateFromStore();
+
 
                 // 5. Final UI update
                 RefreshView();
@@ -409,11 +440,10 @@ namespace Log_Analyzer_App
                 LogDataStore.FirstLogLine = GetFirstLogLine(openFileDialog.FileName);
 
                 // 3. Update UI to prompt for parsing pattern choice
-                // Display the default pattern suggestion.
-                LogDataStore.CurrentLogPattern = LogDataStore.DefaultLogPattern; // Reset to default for suggestion
-                LogDataStore.CurrentLogPatternDescription = "Default Pattern: Captures [Timestamp], Level (INFO|WARN|ERROR), and Message.";
+                // Restore the *last used* pattern for suggestion (either default or custom)
+                // If a log file was successfully loaded previously, the pattern will be persisted.
 
-                // 4. Test the default pattern against the first line
+                // 4. Test the current active pattern against the first line
                 TestParsingPatternOnFirstLine();
 
                 // 5. Set initial status text

@@ -164,9 +164,10 @@
                                     Click="UseDefaultPattern_Click"
                                     Margin="0 5 0 5"/>
 
-                            <Button Content="CONFIGURE CUSTOM REGEX (Placeholder)" 
+                            <!-- UPDATED: Placeholder button renamed to reflect actual functionality -->
+                            <Button Content="CREATE CUSTOM REGEX PATTERN" 
                                     Style="{StaticResource MaterialDesignFlatButton}" 
-                                    Foreground="Gray"
+                                    Foreground="{DynamicResource PrimaryHueMidBrush}"
                                     Click="CustomPattern_Click"
                                     Margin="0 5 0 5"/>
 

@@ -1,0 +1,149 @@
+﻿<Window x:Class="Log_Analyzer_App.RegexBuilderWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        mc:Ignorable="d"
+        Title="Custom Regex Pattern Builder" 
+        Height="650" Width="800" 
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="{x:Null}"
+        DataContext="{Binding RelativeSource={RelativeSource Self}}">
+
+    <materialDesign:Card UniformCornerRadius="15" Margin="10" Padding="20" Background="{DynamicResource MaterialDesignPaper}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <!-- Title -->
+                <RowDefinition Height="Auto"/>
+                <!-- Log Line Preview -->
+                <RowDefinition Height="Auto"/>
+                <!-- Regex Input & Test Button -->
+                <RowDefinition Height="*"/>
+                <!-- Match Preview & Help -->
+                <RowDefinition Height="Auto"/>
+                <!-- Action Buttons -->
+            </Grid.RowDefinitions>
+
+            <!-- Title -->
+            <TextBlock Grid.Row="0" Text="Custom Log Pattern Configuration" FontSize="24" FontWeight="Bold" Margin="0 0 0 15" Foreground="{DynamicResource SecondaryHueMidBrush}"/>
+
+            <!-- 1. Log Line Preview -->
+            <materialDesign:Card Grid.Row="1" UniformCornerRadius="8" Padding="15" Margin="0 0 0 15" Background="{DynamicResource MaterialDesignLightBackground}">
+                <StackPanel>
+                    <TextBlock Text="Log Line Sample (Read-Only)" FontWeight="SemiBold" Opacity="0.8" Margin="0 0 0 5"/>
+                    <TextBox Text="{Binding LogLinePreview}"
+                             TextWrapping="Wrap"
+                             FontFamily="Consolas" 
+                             IsReadOnly="True"
+                             materialDesign:TextFieldAssist.DecorationVisibility="Collapsed"
+                             materialDesign:TextFieldAssist.UnderlineBrush="{x:Null}"
+                             BorderThickness="0"/>
+                </StackPanel>
+            </materialDesign:Card>
+
+            <!-- 2. Regex Input and Test -->
+            <StackPanel Grid.Row="2" Margin="0 0 0 15">
+                <TextBlock Text="1. Enter Your Custom Regex Pattern" FontWeight="SemiBold" Opacity="0.8" Margin="0 0 0 5"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBox x:Name="RegexPatternTextBox"
+                             Text="{Binding CustomRegex, UpdateSourceTrigger=PropertyChanged}"
+                             Grid.Column="0"
+                             materialDesign:HintAssist.Hint="Example: ^\[(.*?)\].*?(INFO|WARN|ERROR):\s*(.*)$"
+                             TextWrapping="Wrap"
+                             FontFamily="Consolas"
+                             Margin="0 0 10 0"
+                             KeyUp="RegexPatternTextBox_KeyUp"/>
+
+                    <Button Content="TEST PATTERN" 
+                            Grid.Column="1" 
+                            Style="{StaticResource MaterialDesignRaisedButton}"
+                            materialDesign:ButtonAssist.CornerRadius="5"
+                            Click="TestPattern_Click"/>
+                </Grid>
+
+                <TextBox x:Name="PatternDescriptionTextBox"
+                         Text="{Binding PatternDescription, UpdateSourceTrigger=PropertyChanged}"
+                         materialDesign:HintAssist.Hint="Enter a brief description for this pattern (e.g., Apache Combined Log Format)"
+                         Style="{StaticResource MaterialDesignFloatingHintTextBox}"
+                         Margin="0 15 0 0"/>
+            </StackPanel>
+
+            <!-- 3. Match Preview & Help -->
+            <Grid Grid.Row="3">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Match Preview (Left) -->
+                <materialDesign:Card Grid.Column="0" UniformCornerRadius="8" Padding="15" Margin="0 0 10 0">
+                    <StackPanel>
+                        <TextBlock Text="2. Real-Time Match Preview (Groups 1, 2, 3)" FontWeight="Bold" Margin="0 0 0 10"/>
+                        <TextBlock x:Name="MatchStatusTextBlock" Text="Status: Waiting for test..." Margin="0 0 0 10" Foreground="Gray"/>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Text="Timestamp (Group 1):" Grid.Row="0" Grid.Column="0" FontWeight="SemiBold" Margin="0 0 10 5" VerticalAlignment="Top"/>
+                            <TextBlock Text="{Binding ParsedResult.Timestamp}" Grid.Row="0" Grid.Column="1" TextWrapping="Wrap" Margin="0 0 0 5" FontFamily="Consolas"/>
+
+                            <TextBlock Text="Level (Group 2):" Grid.Row="1" Grid.Column="0" FontWeight="SemiBold" Margin="0 0 10 5" VerticalAlignment="Top"/>
+                            <TextBlock Text="{Binding ParsedResult.Level}" Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" Margin="0 0 0 5" FontFamily="Consolas"/>
+
+                            <TextBlock Text="Message (Group 3):" Grid.Row="2" Grid.Column="0" FontWeight="SemiBold" Margin="0 0 10 5" VerticalAlignment="Top"/>
+                            <TextBlock Text="{Binding ParsedResult.Message}" Grid.Row="2" Grid.Column="1" TextWrapping="Wrap" Margin="0 0 0 5"/>
+                        </Grid>
+                    </StackPanel>
+                </materialDesign:Card>
+
+                <!-- Regex Help (Right) -->
+                <materialDesign:Card Grid.Column="1" UniformCornerRadius="8" Padding="15" Margin="10 0 0 0" Background="{DynamicResource MaterialDesignLightBackground}">
+                    <StackPanel>
+                        <TextBlock Text="Regex Quick Help" FontWeight="Bold" Margin="0 0 0 10"/>
+                        <TextBlock Text="You need exactly three capture groups (brackets) for Timestamp, Level, and Message, in that order." TextWrapping="Wrap" FontSize="12" Opacity="0.9" Margin="0 0 0 10"/>
+
+                        <TextBlock Text="Common Groups:" FontWeight="SemiBold" Margin="0 0 0 5"/>
+                        <TextBlock Text="• (.*?) - Any content (non-greedy)" FontSize="12" FontFamily="Consolas"/>
+                        <TextBlock Text="• \s* - Zero or more spaces" FontSize="12" FontFamily="Consolas"/>
+                        <TextBlock Text="• (INFO|WARN|ERROR) - Specific levels" FontSize="12" FontFamily="Consolas"/>
+                        <TextBlock Text="• \[...\] - Matches literal brackets" FontSize="12" FontFamily="Consolas"/>
+                        <TextBlock Text="• ^...$ - Start and end of line" FontSize="12" FontFamily="Consolas"/>
+                    </StackPanel>
+                </materialDesign:Card>
+            </Grid>
+
+            <!-- 4. Action Buttons -->
+            <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0 20 0 0">
+                <Button Content="CANCEL" 
+                        Style="{StaticResource MaterialDesignFlatButton}" 
+                        Margin="0 0 10 0"
+                        Click="Cancel_Click"/>
+
+                <Button Content="3. SAVE AND USE PATTERN" 
+                        x:Name="SaveButton"
+                        Style="{StaticResource MaterialDesignRaisedButton}"
+                        materialDesign:ButtonAssist.CornerRadius="5"
+                        Background="{DynamicResource PrimaryHueMidBrush}"
+                        IsEnabled="False"
+                        Click="SaveAndUsePattern_Click"/>
+            </StackPanel>
+        </Grid>
+    </materialDesign:Card>
+</Window>
