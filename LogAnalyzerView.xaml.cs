@@ -189,12 +189,6 @@ namespace Log_Analyzer_App
                 PythonStatus.Text = $"Status: Log file ready for analysis. ({_logEntries.Count} entries)";
                 UpdateSummaryStatistics();
             }
-            else if (LogDataStore.SelectedFileForParsing != null)
-            {
-                // A file has been selected but not yet parsed (waiting for confirmation)
-                PythonStatus.Text = $"Status: File selected: {Path.GetFileName(LogDataStore.SelectedFileForParsing)}. Confirm parsing pattern.";
-                UpdateSummaryStatistics(true);
-            }
             else
             {
                 // No file loaded

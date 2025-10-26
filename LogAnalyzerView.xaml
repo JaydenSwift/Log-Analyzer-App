@@ -155,8 +155,6 @@
                                            Grid.Row="2" Grid.Column="1" TextWrapping="Wrap" Margin="0 0 0 5"/>
                             </Grid>
 
-                            <TextBlock Text="Use this suggested pattern to break the log into columns, or manually configure a custom regex." TextWrapping="Wrap" Opacity="0.8" FontSize="12" Margin="0 0 0 10"/>
-
                             <!-- Action Buttons -->
                             <Button Content="USE DEFAULT PATTERN" 
                                     Style="{StaticResource MaterialDesignRaisedButton}"
