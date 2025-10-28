@@ -25,7 +25,7 @@ namespace Log_Analyzer_App
         public List<string> FieldNames { get; set; } = new List<string>();
     }
 
-    // --- Model Class for Python JSON output ---
+    // --- Model Class for Python JSON output (Parsing) ---
     public class PythonParserResponse
     {
         public bool Success { get; set; }
@@ -33,6 +33,16 @@ namespace Log_Analyzer_App
         public List<LogEntry> Data { get; set; }
         public string Error { get; set; }
     }
+
+    // --- NEW Model Class for Python JSON output (Pattern Suggestion) ---
+    public class PythonSuggesterResponse
+    {
+        public bool Success { get; set; }
+        // Data is now a single LogPatternDefinition object
+        public LogPatternDefinition Data { get; set; }
+        public string Error { get; set; }
+    }
+
 
     /// <summary>
     /// Static class to hold the application's persistent log data.
@@ -44,11 +54,12 @@ namespace Log_Analyzer_App
         // Persistent file path
         public static string CurrentFilePath { get; set; } = "No log file loaded.";
         public static string SelectedFileForParsing { get; set; } = null;
+        public static string OriginalFilePath { get; set; } = null; // NEW: Store original path for parsing reuse
 
         // NEW: Centralized pattern definition store
         public static LogPatternDefinition CurrentPatternDefinition { get; set; }
 
-        // Default pattern definition
+        // Default pattern definition (now redundant as it's defined in Python, but kept as a fallback)
         public static LogPatternDefinition DefaultPatternDefinition = new LogPatternDefinition
         {
             Pattern = @"^\[(.*?)\]\s*(INFO|WARN|ERROR):\s*(.*)$",
@@ -89,11 +100,18 @@ namespace Log_Analyzer_App
             // Use the Level property of LogEntry, which is derived from the Fields dictionary
             if (LogEntries.Any())
             {
+                // Get the name of the 'Level' field, which is expected to be the second field (index 1)
+                string levelFieldName = LogDataStore.CurrentPatternDefinition.FieldNames.Count > 1
+                    ? LogDataStore.CurrentPatternDefinition.FieldNames[1]
+                    : "Level";
+
                 // Group by Level and count
                 var counts = LogEntries
-                    // Check if Level is not null/empty before grouping
-                    .Where(e => !string.IsNullOrEmpty(e.Level) && e.Level != "N/A")
-                    .GroupBy(e => e.Level.ToUpper()) // Group by uppercase level for robustness
+                    // Safely try to get the Level field's value
+                    .Where(e => e.Fields.ContainsKey(levelFieldName))
+                    .Select(e => e.Fields[levelFieldName])
+                    .Where(levelValue => !string.IsNullOrEmpty(levelValue) && levelValue != "N/A")
+                    .GroupBy(levelValue => levelValue.ToUpper()) // Group by uppercase level for robustness
                     .ToDictionary(g => g.Key, g => (double)g.Count());
 
                 // Update SummaryCounts dictionary safely
@@ -115,7 +133,9 @@ namespace Log_Analyzer_App
         public class LogPreviewModel : INotifyPropertyChanged
         {
             private string _firstLogLine;
-            private LogEntry _parsedFirstLine;
+            // CRITICAL FIX: To notify the UI when the Fields dictionary changes (which drives the dynamic ItemsControl), 
+            // we must replace the whole LogEntry object when the pattern changes.
+            private LogEntry _parsedFirstLine = new LogEntry();
 
             public string FirstLogLine
             {
@@ -143,15 +163,13 @@ namespace Log_Analyzer_App
 
                 // Create a new LogEntry instance to ensure deep property change notification
                 // and assign the correct field order for derived properties
+                // This ensures the ItemsControl on the XAML side (which binds to ParsedFirstLine.Fields) refreshes.
                 ParsedFirstLine = new LogEntry
                 {
                     FieldOrder = fieldOrder ?? LogDataStore.CurrentPatternDefinition.FieldNames
                 };
 
-                // The TestParsingPatternOnFirstLine() method now correctly populates
-                // the Fields dictionary in LogDataStore.ParsedFirstLine.
-                // We copy the results over to the INPC instance here for binding.
-                ParsedFirstLine.Fields.Clear();
+                // Copy the results over to the INPC instance here for binding.
                 foreach (var kvp in LogDataStore.ParsedFirstLine.Fields)
                 {
                     ParsedFirstLine.Fields.Add(kvp.Key, kvp.Value);
@@ -174,8 +192,14 @@ namespace Log_Analyzer_App
             // Bind the static ObservableCollection to the DataGrid's ItemsSource
             LogDataGrid.ItemsSource = _logEntries;
 
-            // NEW: Subscribe to the AutoGeneratingColumn event to customize dynamic column creation
-            LogDataGrid.AutoGeneratingColumn += LogDataGrid_AutoGeneratingColumn;
+            // Since we set AutoGenerateColumns=False in XAML, we only need to call SetupDynamicColumns 
+            // when data is loaded, not on AutoGeneratingColumn event.
+
+            // Ensure columns are set up on startup if data already exists (e.g., app restart)
+            if (_logEntries.Any())
+            {
+                SetupDynamicColumns();
+            }
 
             // Update UI with persistent data on initialization
             RefreshView();
@@ -184,28 +208,8 @@ namespace Log_Analyzer_App
         }
 
         /// <summary>
-        /// Handles the DataGrid's AutoGeneratingColumn event to control which columns are shown 
-        /// by canceling internal properties.
-        /// </summary>
-        private void LogDataGrid_AutoGeneratingColumn(object sender, DataGridAutoGeneratingColumnEventArgs e)
-        {
-            string header = e.Column.Header.ToString();
-
-            // Explicitly cancel internal/derived properties that are now hidden via [Browsable(false)] in LogEntry.cs
-            // We cancel here because DataGrid.AutoGenerateColumns=True is still set in XAML
-            if (header == nameof(LogEntry.Fields) ||
-                header == nameof(LogEntry.FieldOrder) ||
-                header == nameof(LogEntry.Timestamp) ||
-                header == nameof(LogEntry.Level) ||
-                header == nameof(LogEntry.Message))
-            {
-                e.Cancel = true;
-                return;
-            }
-        }
-
-        /// <summary>
         /// NEW: Manually creates and configures the DataGrid columns based on the user's current pattern definition.
+        /// This method is crucial for dynamic column support.
         /// </summary>
         private void SetupDynamicColumns()
         {
@@ -217,7 +221,7 @@ namespace Log_Analyzer_App
             // Check if there are field names to display
             if (!fieldNames.Any())
             {
-                // Add a single "Message" column if no fields are defined (fallback/error state)
+                // Fallback: If no fields defined (e.g., bad regex), add a generic Message column
                 fieldNames = new List<string> { "Message" };
             }
 
@@ -229,11 +233,14 @@ namespace Log_Analyzer_App
                 {
                     Header = fieldName,
                     // Give Timestamp/Level a fixed width and Message a star width for better default appearance
-                    Width = (fieldName == "Timestamp" || fieldName == "Level")
+                    // NOTE: Since the column names are dynamic, we use a simple heuristic for size,
+                    // or let the width auto-adjust.
+                    Width = (fieldName.Contains("Timestamp") || fieldName.Contains("Level") || fieldName.Length < 10)
                         ? DataGridLength.Auto
                         : new DataGridLength(1, DataGridLengthUnitType.Star),
                     IsReadOnly = true,
                     // Set the binding path to look into the LogEntry's Fields dictionary
+                    // This uses the dynamic property lookup capability of WPF binding.
                     Binding = new Binding($"Fields[{fieldName}]")
                 };
 
@@ -287,7 +294,7 @@ namespace Log_Analyzer_App
                 ParsingChoicePanel.Visibility = Visibility.Collapsed;
             }
             // If a file is selected and we need a decision (show choice panel)
-            else if (LogDataStore.SelectedFileForParsing != null)
+            else if (LogDataStore.SelectedFileForParsing != null || LogDataStore.OriginalFilePath != null)
             {
                 PythonStatus.Visibility = Visibility.Visible;
                 ParsingChoicePanel.Visibility = Visibility.Visible;
@@ -388,13 +395,19 @@ namespace Log_Analyzer_App
             // Placeholder for selection logic
         }
 
-        // NEW: Handles the click to use the suggested pattern and start parsing
+        /// <summary>
+        /// Handles the click to use the suggested pattern and start parsing.
+        /// </summary>
         private void UseDefaultPattern_Click(object sender, RoutedEventArgs e)
         {
-            // Ensure the default pattern is active
-            LogDataStore.CurrentPatternDefinition = LogDataStore.DefaultPatternDefinition;
+            // The suggested pattern is already stored in LogDataStore.CurrentPatternDefinition 
+            // from the LoadFileButton_Click logic.
 
-            // Start the parsing process
+            // FIX: Restore SelectedFileForParsing from the original path using OriginalFilePath.
+            // We use OriginalFilePath here, and then StartParsingWithPattern will clear it in finally block.
+            LogDataStore.SelectedFileForParsing = LogDataStore.OriginalFilePath;
+
+            // We just need to trigger the parsing process.
             StartParsingWithPattern();
         }
 
@@ -403,13 +416,13 @@ namespace Log_Analyzer_App
         /// </summary>
         private void CustomPattern_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(LogDataStore.SelectedFileForParsing) || string.IsNullOrWhiteSpace(LogDataStore.FirstLogLine))
+            if (string.IsNullOrWhiteSpace(LogDataStore.OriginalFilePath) || string.IsNullOrWhiteSpace(LogDataStore.FirstLogLine))
             {
                 MessageBox.Show("Please load a log file first to provide a line sample for the Regex Builder.", "Missing Log File", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            // Pass the current active pattern definition to pre-fill the modal
+            // Pass the current active pattern definition (which may be the suggested one) to pre-fill the modal
             var builderWindow = new RegexBuilderWindow(
                 LogDataStore.FirstLogLine,
                 LogDataStore.CurrentPatternDefinition
@@ -426,6 +439,10 @@ namespace Log_Analyzer_App
                 // 2. Re-test and update the UI preview to reflect the chosen custom pattern
                 TestParsingPatternOnFirstLine();
                 PreviewModel.UpdateFromStore();
+
+                // FIX: Restore SelectedFileForParsing from the original path so the StartParsingWithPattern 
+                // logic can find the file.
+                LogDataStore.SelectedFileForParsing = LogDataStore.OriginalFilePath;
 
                 // 3. Start parsing immediately with the custom pattern
                 StartParsingWithPattern();
@@ -453,13 +470,18 @@ namespace Log_Analyzer_App
             try
             {
                 // 2. Execute Python script and get the list of log entries
-                // Pass both the regex pattern and the field names (as JSON string)
-                List<LogEntry> logEntries = await Task.Run(() => RunPythonParser(filePath, definition.Pattern, definition.FieldNames));
+                // Pass the 'parse' command along with the file details
+                List<LogEntry> logEntries = await Task.Run(() => RunPythonParser(
+                    "parse", // Command
+                    filePath,
+                    definition.Pattern,
+                    definition.FieldNames
+                ));
 
                 // 3. Clear static collection and replace with new data
                 _logEntries.Clear();
 
-                // --- NEW COLUMN LOGIC ---
+                // --- NEW COLUMN LOGIC: MUST BE CALLED BEFORE ADDING ENTRIES ---
                 SetupDynamicColumns();
                 // -------------------------
 
@@ -498,70 +520,54 @@ namespace Log_Analyzer_App
             finally
             {
                 LogDataStore.SelectedFileForParsing = null; // Clear the temporary path
+                // Note: LogDataStore.OriginalFilePath remains set for future parsing attempts
                 LoadFileButton.IsEnabled = true; // Re-enable Load button
             }
         }
 
-
         /// <summary>
-        /// Prompts the user to select a log file, then sets up the parsing configuration step.
+        /// Executes the external Python parser script for both 'parse' and 'suggest_pattern' commands.
         /// </summary>
-        private void LoadFileButton_Click(object sender, RoutedEventArgs e)
-        {
-            OpenFileDialog openFileDialog = new OpenFileDialog();
-            openFileDialog.Filter = "Log Files (*.log, *.txt)|*.log;*.txt|All files (*.*)|*.*";
-            openFileDialog.Title = "Select a Log File for Analysis";
-
-            bool? result = openFileDialog.ShowDialog();
-
-            if (result == true)
-            {
-                // 1. Store the selected file path temporarily
-                LogDataStore.SelectedFileForParsing = openFileDialog.FileName;
-
-                // 2. Read the first non-empty line of the file
-                LogDataStore.FirstLogLine = GetFirstLogLine(openFileDialog.FileName);
-
-                // 3. Test the current active pattern against the first line
-                TestParsingPatternOnFirstLine();
-
-                // 4. Set initial status text
-                LogDataStore.CurrentFilePath = $"File Selected: {Path.GetFileName(openFileDialog.FileName)}";
-
-                // 5. Update the INPC view model properties.
-                PreviewModel.UpdateFromStore();
-            }
-            // Ensure view is refreshed to show the updated status or pattern choice
-            RefreshView();
-        }
-
-        /// <summary>
-        /// Executes the external Python parser script and returns a list of LogEntry objects.
-        /// </summary>
-        /// <param name="filePath">The path to the log file to analyze.</param>
-        /// <param name="logPattern">The custom regex pattern to use for parsing.</param>
-        /// <param name="fieldNames">The user-defined names for the capture groups.</param>
-        /// <returns>A List of LogEntry objects.</returns>
-        private List<LogEntry> RunPythonParser(string filePath, string logPattern, List<string> fieldNames)
+        /// <param name="command">The command to run ('parse' or 'suggest_pattern').</param>
+        /// <param name="filePath">The path to the log file (or null for suggestion).</param>
+        /// <param name="logPattern">The custom regex pattern to use for parsing (or null for suggestion).</param>
+        /// <param name="fieldNames">The user-defined names for the capture groups (or null for suggestion).</param>
+        /// <returns>A List of LogEntry objects (for parse) or null.</returns>
+        private List<LogEntry> RunPythonParser(string command, string filePath, string logPattern, List<string> fieldNames)
         {
             string pythonExecutable = "python";
             string scriptPath = "log_parser.py";
+            string arguments;
 
-            // Serialize field names list to a JSON string for passing to Python
-            string fieldNamesJson = JsonSerializer.Serialize(fieldNames);
-
-            // Build arguments: script path, file path, regex pattern, and field names JSON
-            // CRITICAL: Escape both the regex pattern and the field names JSON for the command line.
-            string escapedLogPattern = logPattern.Replace("\"", "\\\"");
-            string escapedFieldNamesJson = fieldNamesJson.Replace("\"", "\\\"");
-
-            string arguments = $"{scriptPath} \"{filePath}\" \"{escapedLogPattern}\" \"{escapedFieldNamesJson}\"";
+            // FIX: Explicitly include the scriptPath in the arguments for reliable execution.
+            if (command == "parse")
+            {
+                // For parsing, we need all three arguments
+                string fieldNamesJson = JsonSerializer.Serialize(fieldNames);
+                string escapedLogPattern = logPattern.Replace("\"", "\\\"");
+                string escapedFieldNamesJson = fieldNamesJson.Replace("\"", "\\\"");
+                // CRITICAL FIX: Prepend the script path
+                arguments = $"{scriptPath} {command} \"{filePath}\" \"{escapedLogPattern}\" \"{escapedFieldNamesJson}\"";
+            }
+            else if (command == "suggest_pattern")
+            {
+                // For suggestion, we only need the single log line
+                string escapedLogLine = LogDataStore.FirstLogLine.Replace("\"", "\\\"");
+                // CRITICAL FIX: Prepend the script path
+                arguments = $"{scriptPath} {command} \"{escapedLogLine}\"";
+            }
+            else
+            {
+                throw new ArgumentException($"Invalid command provided to RunPythonParser: {command}");
+            }
 
             using (Process process = new Process())
             {
                 process.StartInfo.FileName = pythonExecutable;
                 process.StartInfo.Arguments = arguments;
                 process.StartInfo.UseShellExecute = false;
+                // We assume the script and the patterns.json file are correctly configured 
+                // in the project settings (Copy to Output Directory = Always)
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardError = true;
                 process.StartInfo.CreateNoWindow = true; // Don't show the Python console window
@@ -575,29 +581,109 @@ namespace Log_Analyzer_App
 
                 if (process.ExitCode != 0 && string.IsNullOrWhiteSpace(jsonOutput))
                 {
+                    // Log the error output from Python for debugging
+                    Console.WriteLine($"Python Stderr: {errorOutput}");
                     throw new Exception($"Python process failed with exit code {process.ExitCode}. Error: {errorOutput}");
                 }
 
-                PythonParserResponse response;
-                try
+                // Handle response based on command
+                if (command == "parse")
                 {
-                    response = JsonSerializer.Deserialize<PythonParserResponse>(jsonOutput, new JsonSerializerOptions
+                    PythonParserResponse response;
+                    try
                     {
-                        PropertyNameCaseInsensitive = true
-                    });
+                        response = JsonSerializer.Deserialize<PythonParserResponse>(jsonOutput, new JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true
+                        });
+                    }
+                    catch (JsonException ex)
+                    {
+                        throw new Exception($"Failed to parse JSON output from Python. Raw Output: '{jsonOutput}'. JSON Error: {ex.Message}");
+                    }
+
+                    if (!response.Success)
+                    {
+                        throw new Exception($"Log parsing failed within Python script. Reason: {response.Error}");
+                    }
+                    return response.Data ?? new List<LogEntry>(); // Return parsed data or empty list
                 }
-                catch (JsonException ex)
+                else if (command == "suggest_pattern")
                 {
-                    throw new Exception($"Failed to parse JSON output from Python. Raw Output: '{jsonOutput}'. JSON Error: {ex.Message}");
+                    PythonSuggesterResponse response;
+                    try
+                    {
+                        response = JsonSerializer.Deserialize<PythonSuggesterResponse>(jsonOutput, new JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true
+                        });
+                    }
+                    catch (JsonException ex)
+                    {
+                        throw new Exception($"Failed to parse JSON output from Python suggester. Raw Output: '{jsonOutput}'. JSON Error: {ex.Message}");
+                    }
+
+                    if (!response.Success)
+                    {
+                        // Set the default pattern if suggestion failed
+                        LogDataStore.CurrentPatternDefinition = LogDataStore.DefaultPatternDefinition;
+                        Console.WriteLine($"Pattern suggestion failed: {response.Error}");
+                    }
+                    else
+                    {
+                        // Store the successfully suggested pattern
+                        LogDataStore.CurrentPatternDefinition = response.Data;
+                    }
+                    return null; // Return value is irrelevant for this command
                 }
 
-                if (!response.Success)
-                {
-                    throw new Exception($"Log parsing failed within Python script. Reason: {response.Error}");
-                }
-
-                return response.Data ?? new List<LogEntry>(); // Return parsed data or empty list
+                return null;
             }
+        }
+
+
+        /// <summary>
+        /// Prompts the user to select a log file, then runs the pattern suggestion logic.
+        /// </summary>
+        private async void LoadFileButton_Click(object sender, RoutedEventArgs e)
+        {
+            OpenFileDialog openFileDialog = new OpenFileDialog();
+            openFileDialog.Filter = "Log Files (*.log, *.txt)|*.log;*.txt|All files (*.*)|*.*";
+            openFileDialog.Title = "Select a Log File for Analysis";
+
+            bool? result = openFileDialog.ShowDialog();
+
+            if (result == true)
+            {
+                // 1. Store the selected file path temporarily AND save the original path
+                LogDataStore.SelectedFileForParsing = openFileDialog.FileName;
+                LogDataStore.OriginalFilePath = openFileDialog.FileName;
+
+                // 2. Read the first non-empty line of the file
+                LogDataStore.FirstLogLine = GetFirstLogLine(openFileDialog.FileName);
+
+                // --- NEW DYNAMIC PATTERN SUGGESTION ---
+                LoadFileButton.IsEnabled = false; // Disable button during suggestion
+                PythonStatus.Text = "Status: Analyzing log format and suggesting pattern...";
+
+                // Run the Python suggester command
+                await Task.Run(() => RunPythonParser("suggest_pattern", null, null, null));
+
+                LoadFileButton.IsEnabled = true; // Re-enable button
+                // --- END NEW DYNAMIC PATTERN SUGGESTION ---
+
+
+                // 3. Test the current active pattern (the suggested one) against the first line
+                TestParsingPatternOnFirstLine();
+
+                // 4. Set initial status text
+                LogDataStore.CurrentFilePath = $"File Selected: {Path.GetFileName(openFileDialog.FileName)}";
+
+                // 5. Update the INPC view model properties.
+                PreviewModel.UpdateFromStore();
+            }
+            // Ensure view is refreshed to show the updated status or pattern choice
+            RefreshView();
         }
 
         /// <summary>

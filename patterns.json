@@ -1,0 +1,42 @@
+[
+  {
+    "pattern": "^(\\[\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}:\\d{2}\\])\\s*(\\S+):\\s*(.*)$",
+    "description": "Standard: [YYYY-MM-DD HH:MM:SS] LEVEL: Message (Java/C# style)",
+    "field_names": [ "Timestamp", "Level", "Message" ]
+  },
+  {
+    "pattern": "^(\\d{4}/\\d{2}/\\d{2}\\s\\d{2}:\\d{2}:\\d{2})\\s*-\\s*(INFO|WARN|ERROR|DEBUG|TRACE)\\s*-\\s*(.*)$",
+    "description": "Alternative: YYYY/MM/DD HH:MM:SS - LEVEL - Message",
+    "field_names": [ "Timestamp", "Level", "Message" ]
+  },
+  {
+    "pattern": "^(\\[.*?\\])\\s*\\[(INFO|WARN|ERROR|DEBUG)\\]\\s*\\[(.*?)\\]\\s*(.*)$",
+    "description": "Log4j Style: [Timestamp] [LEVEL] [Thread] Message",
+    "field_names": [ "Timestamp", "Level", "Thread", "Message" ]
+  },
+  {
+    "pattern": "^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z)\\s*-\\s*(INFO|WARN|ERROR)\\s*-\\s*(.*)$",
+    "description": "ISO 8601 UTC: YYYY-MM-DDTHH:MM:SS.sssZ - LEVEL - Message",
+    "field_names": [ "Timestamp", "Level", "Message" ]
+  },
+  {
+    "pattern": "^(\\S+)\\s+(\\S+)\\s+(\\S+)\\s+\\[(.*?)\\]\\s+\"(\\S+)\\s+(\\S+)\\s+(\\S+)\"\\s+(\\S+)\\s+(\\S+)\\s*$",
+    "description": "Apache/NGINX Access Log (Combined Format)",
+    "field_names": [ "RemoteHost", "ClientIdentity", "User", "DateTime", "Method", "Resource", "Protocol", "Status", "Bytes" ]
+  },
+  {
+    "pattern": "^(\\S+)\\s+(INFO|WARN|ERROR|DEBUG|TRACE)\\s+\\[(.*?)\\]\\s+(.*)$",
+    "description": "Simple Token Log: Date/Time LEVEL [Context] Message",
+    "field_names": [ "Timestamp", "Level", "Context", "Message" ]
+  },
+  {
+    "pattern": "^(\\[(.*?)])\\s*\\[(.*?)])\\s*(.*)$",
+    "description": "Simple: [Field 1] [Field 2] Message (Generic bracketed fields)",
+    "field_names": [ "Field1", "Field2", "Message" ]
+  },
+  {
+    "pattern": "^(\\S+)\\s+(\\S+)\\s+(.*)$",
+    "description": "Generic: First two words as fields, rest as message.",
+    "field_names": [ "Token1", "Token2", "Message" ]
+  }
+]

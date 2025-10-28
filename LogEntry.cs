@@ -21,35 +21,39 @@ namespace Log_Analyzer_App
 
         // --- Derived Properties for Backwards Compatibility and Preview ---
 
-        // These are also hidden now. The columns for T, L, M will be created dynamically 
-        // using the Fields dictionary, based on the FieldOrder list.
-
         // Helper to safely retrieve a field value, defaulting to "N/A" if not present.
         private string GetValueOrDefault(string key, string defaultValue)
         {
             return Fields.ContainsKey(key) ? Fields[key] : defaultValue;
         }
 
+        // IMPORTANT: All these are now marked as [Browsable(false)] to prevent them 
+        // from being auto-generated as columns, forcing the DataGrid to rely on 
+        // the columns we manually define in LogAnalyzerView.xaml.cs.
+
         [Browsable(false)]
         public string Timestamp
         {
             // We still use this getter/setter internally (e.g., for PreviewModel)
+            // It relies on the first field name in the dynamic FieldOrder list.
             get => FieldOrder.Any() ? GetValueOrDefault(FieldOrder[0], "N/A") : GetValueOrDefault("Timestamp", "N/A");
-            set => Fields["Timestamp"] = value;
+            set => Fields[FieldOrder.Any() ? FieldOrder[0] : "Timestamp"] = value;
         }
 
         [Browsable(false)]
         public string Level
         {
+            // It relies on the second field name in the dynamic FieldOrder list.
             get => FieldOrder.Count > 1 ? GetValueOrDefault(FieldOrder[1], "N/A") : GetValueOrDefault("Level", "N/A");
-            set => Fields["Level"] = value;
+            set => Fields[FieldOrder.Count > 1 ? FieldOrder[1] : "Level"] = value;
         }
 
         [Browsable(false)]
         public string Message
         {
+            // It relies on the third field name in the dynamic FieldOrder list.
             get => FieldOrder.Count > 2 ? GetValueOrDefault(FieldOrder[2], "N/A") : GetValueOrDefault("Message", "N/A");
-            set => Fields["Message"] = value;
+            set => Fields[FieldOrder.Count > 2 ? FieldOrder[2] : "Message"] = value;
         }
     }
 }

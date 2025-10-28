@@ -79,18 +79,17 @@ namespace Log_Analyzer_App
             CustomRegex = initialDefinition.Pattern;
             PatternDescription = initialDefinition.Description;
 
-            // Initialize the FieldDefinitions from the initial data
-            if (initialDefinition.FieldNames.Any())
+            // Initialize the FieldDefinitions from the initial data's field names
+            // This ensures that if the user clicks "Custom Pattern" after using the default,
+            // the fields are pre-populated with "Timestamp", "Level", and "Message".
+            for (int i = 0; i < initialDefinition.FieldNames.Count; i++)
             {
-                for (int i = 0; i < initialDefinition.FieldNames.Count; i++)
+                FieldDefinitions.Add(new FieldDefinition
                 {
-                    FieldDefinitions.Add(new FieldDefinition
-                    {
-                        GroupIndex = i + 1,
-                        FieldName = initialDefinition.FieldNames[i],
-                        PreviewValue = "N/A" // Will be updated by TestPattern()
-                    });
-                }
+                    GroupIndex = i + 1,
+                    FieldName = initialDefinition.FieldNames[i],
+                    PreviewValue = "N/A" // Will be updated by TestPattern()
+                });
             }
 
             // Run the test immediately to show initial state
@@ -106,6 +105,9 @@ namespace Log_Analyzer_App
         {
             MatchStatusTextBlock.Foreground = Brushes.Gray;
             SaveButton.IsEnabled = false;
+
+            // Store old definitions temporarily to preserve names if group count is the same
+            var oldDefinitions = FieldDefinitions.ToDictionary(f => f.GroupIndex, f => f.FieldName);
             FieldDefinitions.Clear(); // Clear old definitions
 
             if (string.IsNullOrWhiteSpace(LogLinePreview))
@@ -138,13 +140,14 @@ namespace Log_Analyzer_App
                 // Populate FieldDefinitions list with detected groups and their preview values
                 for (int i = 1; i <= totalCaptureGroups; i++)
                 {
-                    // Attempt to pre-fill name from current definitions, or default to a placeholder
                     string initialName = "";
-                    if (FieldDefinitions.Count >= i)
+
+                    // Attempt to pre-fill name from the previous state (oldDefinitions)
+                    if (oldDefinitions.ContainsKey(i))
                     {
-                        // If the number of groups hasn't changed, keep the name
-                        initialName = FieldDefinitions[i - 1].FieldName;
+                        initialName = oldDefinitions[i];
                     }
+                    // Apply default names for the first few columns if not already named
                     else if (i == 1) initialName = "Timestamp";
                     else if (i == 2) initialName = "Level";
                     else if (i == 3) initialName = "Message";
@@ -226,11 +229,8 @@ namespace Log_Analyzer_App
             {
                 TestPattern();
             }
-            else
-            {
-                // Re-check save state immediately if a name or the pattern changes
-                UpdateSaveButtonState();
-            }
+            // Also check on any key up to ensure naming changes update the Save button state
+            UpdateSaveButtonState();
         }
 
         /// <summary>
