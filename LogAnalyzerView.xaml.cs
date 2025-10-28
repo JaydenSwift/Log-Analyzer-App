@@ -397,6 +397,7 @@ namespace Log_Analyzer_App
 
         /// <summary>
         /// Handles the click to use the suggested pattern and start parsing.
+        /// CRITICAL FIX: Pass isBestEffort=true to allow partial parsing (zero matches is okay here).
         /// </summary>
         private void UseDefaultPattern_Click(object sender, RoutedEventArgs e)
         {
@@ -407,12 +408,13 @@ namespace Log_Analyzer_App
             // We use OriginalFilePath here, and then StartParsingWithPattern will clear it in finally block.
             LogDataStore.SelectedFileForParsing = LogDataStore.OriginalFilePath;
 
-            // We just need to trigger the parsing process.
-            StartParsingWithPattern();
+            // We just need to trigger the parsing process with the best-effort flag set to true.
+            StartParsingWithPattern(isBestEffortParse: true);
         }
 
         /// <summary>
         /// UPDATED: Handles the click to configure a custom pattern by opening the builder modal.
+        /// CRITICAL FIX: Pass isBestEffort=false to enforce strict parsing (user expects all lines to match custom pattern).
         /// </summary>
         private void CustomPattern_Click(object sender, RoutedEventArgs e)
         {
@@ -444,15 +446,16 @@ namespace Log_Analyzer_App
                 // logic can find the file.
                 LogDataStore.SelectedFileForParsing = LogDataStore.OriginalFilePath;
 
-                // 3. Start parsing immediately with the custom pattern
-                StartParsingWithPattern();
+                // 3. Start parsing immediately with the custom pattern. Strict check is enforced.
+                StartParsingWithPattern(isBestEffortParse: false);
             }
         }
 
         /// <summary>
         /// Encapsulates the core parsing logic, triggered after the user confirms the pattern.
         /// </summary>
-        private async void StartParsingWithPattern()
+        /// <param name="isBestEffortParse">True if partial success (0 matches) is acceptable (used by default button).</param>
+        private async void StartParsingWithPattern(bool isBestEffortParse)
         {
             string filePath = LogDataStore.SelectedFileForParsing;
             LogPatternDefinition definition = LogDataStore.CurrentPatternDefinition;
@@ -475,7 +478,8 @@ namespace Log_Analyzer_App
                     "parse", // Command
                     filePath,
                     definition.Pattern,
-                    definition.FieldNames
+                    definition.FieldNames,
+                    isBestEffortParse // Pass the new flag
                 ));
 
                 // 3. Clear static collection and replace with new data
@@ -514,8 +518,18 @@ namespace Log_Analyzer_App
                 // Ensure the status reverts to a non-parsing state to re-enable controls
                 ShowParserStatus(false);
 
-                // Display error to user
-                MessageBox.Show($"An error occurred during analysis: {ex.Message}", "Python Processing Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                // MODIFIED: Only show the error message box if it was NOT a best-effort parse (i.e., custom regex was used).
+                // For the default button (best-effort), we fail silently in the UI to prevent interruption.
+                if (!isBestEffortParse)
+                {
+                    MessageBox.Show($"An error occurred during analysis: {ex.Message}", "Python Processing Error (Strict Mode)", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                else
+                {
+                    // For best-effort, just update the status text
+                    PythonStatus.Text = $"Status: Failed to parse file fully. Displaying partial results if any. Error: {ex.Message}";
+                    Console.WriteLine($"Best-effort parsing failed: {ex.Message}");
+                }
             }
             finally
             {
@@ -528,12 +542,13 @@ namespace Log_Analyzer_App
         /// <summary>
         /// Executes the external Python parser script for both 'parse' and 'suggest_pattern' commands.
         /// </summary>
-        /// <param name="command">The command to run ('parse' or 'suggest_pattern').</param>
-        /// <param name="filePath">The path to the log file (or null for suggestion).</param>
-        /// <param name="logPattern">The custom regex pattern to use for parsing (or null for suggestion).</param>
-        /// <param name="fieldNames">The user-defined names for the capture groups (or null for suggestion).</param>
+        /// <param name="command">The command to run ('parse' or 'suggest_robust_pattern').</param>
+        /// <param name="filePath">The path to the log file.</param>
+        /// <param name="logPattern">Lhe custom regex pattern to use for parsing (or null).</param>
+        /// <param name="fieldNames">The user-defined names for the capture groups (or null).</param>
+        /// <param name="isBestEffortParse">Flag for the 'parse' command to allow zero matches (optional).</param>
         /// <returns>A List of LogEntry objects (for parse) or null.</returns>
-        private List<LogEntry> RunPythonParser(string command, string filePath, string logPattern, List<string> fieldNames)
+        private List<LogEntry> RunPythonParser(string command, string filePath, string logPattern, List<string> fieldNames, bool isBestEffortParse = false)
         {
             string pythonExecutable = "python";
             string scriptPath = "log_parser.py";
@@ -542,19 +557,21 @@ namespace Log_Analyzer_App
             // FIX: Explicitly include the scriptPath in the arguments for reliable execution.
             if (command == "parse")
             {
-                // For parsing, we need all three arguments
+                // For parsing, we need all four arguments
                 string fieldNamesJson = JsonSerializer.Serialize(fieldNames);
                 string escapedLogPattern = logPattern.Replace("\"", "\\\"");
                 string escapedFieldNamesJson = fieldNamesJson.Replace("\"", "\\\"");
-                // CRITICAL FIX: Prepend the script path
-                arguments = $"{scriptPath} {command} \"{filePath}\" \"{escapedLogPattern}\" \"{escapedFieldNamesJson}\"";
+                string isBestEffortStr = isBestEffortParse ? "true" : "false";
+
+                // CRITICAL FIX: Prepend the script path and append the new isBestEffort flag
+                arguments = $"{scriptPath} {command} \"{filePath}\" \"{escapedLogPattern}\" \"{escapedFieldNamesJson}\" {isBestEffortStr}";
             }
-            else if (command == "suggest_pattern")
+            // NEW command name and logic: passing file path for robust suggestion
+            else if (command == "suggest_robust_pattern")
             {
-                // For suggestion, we only need the single log line
-                string escapedLogLine = LogDataStore.FirstLogLine.Replace("\"", "\\\"");
+                // For suggestion, we only need the file path
                 // CRITICAL FIX: Prepend the script path
-                arguments = $"{scriptPath} {command} \"{escapedLogLine}\"";
+                arguments = $"{scriptPath} {command} \"{filePath}\"";
             }
             else
             {
@@ -608,7 +625,8 @@ namespace Log_Analyzer_App
                     }
                     return response.Data ?? new List<LogEntry>(); // Return parsed data or empty list
                 }
-                else if (command == "suggest_pattern")
+                // NEW command name
+                else if (command == "suggest_robust_pattern")
                 {
                     PythonSuggesterResponse response;
                     try
@@ -659,15 +677,15 @@ namespace Log_Analyzer_App
                 LogDataStore.SelectedFileForParsing = openFileDialog.FileName;
                 LogDataStore.OriginalFilePath = openFileDialog.FileName;
 
-                // 2. Read the first non-empty line of the file
+                // 2. Read the first non-empty line of the file (used only for preview)
                 LogDataStore.FirstLogLine = GetFirstLogLine(openFileDialog.FileName);
 
-                // --- NEW DYNAMIC PATTERN SUGGESTION ---
+                // --- NEW DYNAMIC PATTERN SUGGESTION (Robust Check) ---
                 LoadFileButton.IsEnabled = false; // Disable button during suggestion
-                PythonStatus.Text = "Status: Analyzing log format and suggesting pattern...";
+                PythonStatus.Text = "Status: Analyzing log format and suggesting pattern (checking first 5 lines)...";
 
-                // Run the Python suggester command
-                await Task.Run(() => RunPythonParser("suggest_pattern", null, null, null));
+                // Run the Python suggester command, passing the full file path for robust checking
+                await Task.Run(() => RunPythonParser("suggest_robust_pattern", openFileDialog.FileName, null, null));
 
                 LoadFileButton.IsEnabled = true; // Re-enable button
                 // --- END NEW DYNAMIC PATTERN SUGGESTION ---
