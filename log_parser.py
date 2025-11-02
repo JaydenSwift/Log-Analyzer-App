@@ -9,62 +9,95 @@ from itertools import islice
 ROBUST_CHECK_LINES = 5
 # ---------------------
 
+# --- Pattern Sanitization Helper ---
+def sanitize_pattern(pattern):
+    """
+    Ensures backslashes in the regex pattern are correctly escaped for 
+    compilation after being passed via command-line arguments.
+    """
+    # Replace single backslashes with double backslashes (e.g., '\s' becomes '\\s')
+    # This is often necessary when the command line or C# argument marshalling strips one layer of escaping.
+    return pattern.replace('\\', '\\\\')
+
 # --- Pattern Suggestion Data Loader ---
 
-# Define a fallback if the external file cannot be loaded
-FALLBACK_LOG_PATTERNS = [
-    {
-        "pattern": r"^\[(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\]\s*(INFO|WARN|ERROR|DEBUG|TRACE):\s*(.*)$",
-        "description": "FALLBACK: Standard [Timestamp] LEVEL: Message",
-        "field_names": ["Timestamp", "Level", "Message"]
-    },
-    {
-        "pattern": r"^(\S+)\s+(\S+)\s+(.*)$",
-        "description": "FALLBACK: Generic - First two words as fields, rest as message.",
-        "field_names": ["Token1", "Token2", "Message"]
-    }
-]
-
 def load_patterns():
-    """Loads COMMON_LOG_PATTERNS from the external patterns.json file."""
+    """
+    Loads COMMON_LOG_PATTERNS from the external patterns.json file.
+    If loading fails, it returns a minimal pattern list.
+    """
+    # Define a guaranteed valid minimal pattern for fallback situations (File not found, JSON error)
+    MINIMAL_DEFAULT_PATTERN = [{
+        "pattern": r"^(\S+)\s+(.*)$",
+        "description": "Minimal Default (File/Format Error Fallback)",
+        "field_names": ["Token1", "Message"]
+    }]
+
     try:
-        # Determine the path of the patterns.json file relative to the script's location
+        # CRITICAL PATH FIX:
+        # Get the directory of the *currently executing script file* regardless of the CWD.
         script_dir = os.path.dirname(os.path.abspath(__file__))
         patterns_path = os.path.join(script_dir, "patterns.json")
         
+        # Check if the file exists before attempting to open it (for better debugging)
+        if not os.path.exists(patterns_path):
+            print(f"ERROR: patterns.json not found at expected path: {patterns_path}. Returning minimal default.", file=sys.stderr)
+            return MINIMAL_DEFAULT_PATTERN
+
         with open(patterns_path, 'r') as f:
             patterns = json.load(f)
+            
             if isinstance(patterns, list) and all(isinstance(p, dict) for p in patterns):
-                print(f"DEBUG: Successfully loaded {len(patterns)} patterns from patterns.json", file=sys.stderr)
+                print(f"DEBUG: Successfully loaded {len(patterns)} patterns from patterns.json at {patterns_path}", file=sys.stderr)
+                
+                # If patterns list is loaded but empty, return minimal default to prevent index errors
+                if not patterns:
+                    print("WARNING: patterns.json is empty. Providing minimal default pattern.", file=sys.stderr)
+                    return MINIMAL_DEFAULT_PATTERN
+                    
                 return patterns
             else:
-                print("ERROR: patterns.json loaded, but data format is invalid. Using fallback.", file=sys.stderr)
-                return FALLBACK_LOG_PATTERNS
+                print("ERROR: patterns.json loaded, but data format is invalid (not a list of objects). Returning minimal default.", file=sys.stderr)
+                return MINIMAL_DEFAULT_PATTERN
                 
-    except FileNotFoundError:
-        print("ERROR: patterns.json not found. Using fallback patterns.", file=sys.stderr)
-        return FALLBACK_LOG_PATTERNS
     except json.JSONDecodeError:
-        print("ERROR: patterns.json contains invalid JSON. Using fallback patterns.", file=sys.stderr)
-        return FALLBACK_LOG_PATTERNS
+        print("ERROR: patterns.json contains invalid JSON. Returning minimal default.", file=sys.stderr)
+        return MINIMAL_DEFAULT_PATTERN
     except Exception as e:
-        print(f"ERROR: Unexpected error loading patterns.json: {e}. Using fallback patterns.", file=sys.stderr)
-        return FALLBACK_LOG_PATTERNS
+        error_type = type(e).__name__
+        print(f"ERROR: Unexpected error during pattern loading ({error_type}). Returning minimal default pattern.", file=sys.stderr)
+        return MINIMAL_DEFAULT_PATTERN
 
 
 # Load patterns once when the script starts
 COMMON_LOG_PATTERNS = load_patterns()
 
-# --- Pattern Suggestion Logic (UPDATED FOR ROBUSTNESS) ---
+# --- Pattern Suggestion Logic (FINALIZED) ---
 
 def suggest_robust_pattern(file_path):
     """
-    Attempts to find the best matching regex pattern by checking the first 
-    ROBUST_CHECK_LINES of the log file.
+    Finds the best matching regex pattern by checking the first 
+    ROBUST_CHECK_LINES of the log file using a scoring system.
+    
+    If no pattern matches any line (score=0), it defaults to the first pattern in the list.
     """
+    # Ensure there is at least one pattern loaded (the minimal default if all else failed)
+    if not COMMON_LOG_PATTERNS:
+        # This state should be unreachable due to load_patterns returning a minimal default
+        # but included for absolute safety.
+        return {
+            "pattern": r"^(\S+)\s+(.*)$",
+            "description": "Critical Error Fallback (UNREACHABLE)",
+            "field_names": ["Token1", "Message"]
+        }
+
+    # Start with the first available pattern (which is the minimal default if loading failed, 
+    # or the user's specific pattern if loading succeeded)
+    initial_best_def = COMMON_LOG_PATTERNS[0]
+    
     if not file_path:
         # Return the most standard pattern if no file path is given
-        return COMMON_LOG_PATTERNS[0]
+        return initial_best_def
         
     try:
         # Read the first N non-empty lines from the file
@@ -80,44 +113,59 @@ def suggest_robust_pattern(file_path):
         
         if not log_lines_to_check:
             # If the file is empty or only contains whitespace
-            return COMMON_LOG_PATTERNS[0]
+            return initial_best_def
+            
+        # Initialize tracking variables for the best pattern found so far
+        best_pattern_def = initial_best_def
+        highest_score = 0
+        max_capture_groups = len(initial_best_def["field_names"])
 
-        # Iterate through all patterns and check if they match ALL collected lines
+        # Iterate through all patterns and score them
         for pattern_def in COMMON_LOG_PATTERNS:
             try:
-                pattern = pattern_def["pattern"]
+                # IMPORTANT: Sanitize the pattern before compiling it for testing
+                pattern = sanitize_pattern(pattern_def["pattern"])
                 regex = re.compile(pattern)
-                # The expected number of groups is the number of field names
                 expected_groups = len(pattern_def["field_names"])
-                
-                all_lines_matched = True
+                current_score = 0
                 
                 for line in log_lines_to_check:
                     match = regex.match(line)
                     
-                    # If it fails to match OR the group count is wrong, this pattern fails
-                    # Note: match.groups().Count includes Group 0 (full match), so we use len(match.groups()) for the capture groups count.
-                    if not (match and len(match.groups()) == expected_groups):
-                        all_lines_matched = False
-                        break
+                    # A match is only considered successful if it matches AND extracts the expected number of groups
+                    # NOTE: This check remains strict here to ensure the SUGGESTION is accurate.
+                    if match and len(match.groups()) == expected_groups:
+                        current_score += 1
                 
-                if all_lines_matched:
-                    # Found the most robust match, return its definition
-                    return pattern_def
+                # --- Scoring & Tie-Breaking Logic ---
+                if current_score > highest_score:
+                    # Found a strictly better pattern based on number of matched lines
+                    highest_score = current_score
+                    max_capture_groups = expected_groups
+                    best_pattern_def = pattern_def
+                elif current_score == highest_score and expected_groups > max_capture_groups:
+                    # Found a tie in score, but this pattern is more specific (more capture groups)
+                    max_capture_groups = expected_groups
+                    best_pattern_def = pattern_def
                     
             except re.error:
-                # Skip invalid patterns 
+                # Skip invalid patterns
                 continue
                 
-        # If no pattern matches all lines, return the last pattern (the most generic one)
-        return COMMON_LOG_PATTERNS[-1]
+        # --- FINAL SELECTION LOGIC ---
+        # The best scoring pattern is returned, or the first pattern if no lines matched (highest_score=0).
+        
+        print(f"DEBUG: Final selection (Score: {highest_score}/{len(log_lines_to_check)}, Groups: {max_capture_groups}). Description: {best_pattern_def['description']}", file=sys.stderr)
+        
+        return best_pattern_def
 
-    except Exception:
-        # If file reading fails or another unexpected error occurs, fall back gracefully
-        return COMMON_LOG_PATTERNS[-1]
+    except Exception as e:
+        print(f"ERROR: Unexpected error during pattern suggestion: {e}. Defaulting to first pattern.", file=sys.stderr)
+        # If file reading fails or another unexpected error occurs, fall back gracefully to the first pattern
+        return initial_best_def
 
 
-# --- Core Parsing Logic (UPDATED FOR FORCED PARSING) ---
+# --- Core Parsing Logic (UPDATED) ---
 
 def parse_log_file(file_path, log_pattern, field_names, is_best_effort=False):
     """
@@ -135,9 +183,18 @@ def parse_log_file(file_path, log_pattern, field_names, is_best_effort=False):
     parsed_lines_count = 0
 
     try:
-        LOG_PATTERN_REGEX = re.compile(log_pattern)
+        # CRITICAL FIX: Sanitize the incoming pattern immediately before compilation
+        sanitized_log_pattern = sanitize_pattern(log_pattern)
+        LOG_PATTERN_REGEX = re.compile(sanitized_log_pattern)
+        
         # Dynamic: The expected groups are determined by the field names
         expected_groups = len(field_names)
+        
+        # --- DEBUGGING INSERT START ---
+        print(f"DEBUG PARSE: Using Pattern (Original): {log_pattern}", file=sys.stderr)
+        print(f"DEBUG PARSE: Using Pattern (Sanitized): {sanitized_log_pattern}", file=sys.stderr)
+        print(f"DEBUG PARSE: Expected Groups: {expected_groups}", file=sys.stderr)
+        # --- DEBUGGING INSERT END ---
 
         # Determine the name of the catch-all field (the last field name)
         catch_all_field_name = field_names[-1] if field_names else "Message"
@@ -170,22 +227,29 @@ def parse_log_file(file_path, log_pattern, field_names, is_best_effort=False):
                     # We wrap the extraction in try/except to catch IndexErrors or AttributeErrors 
                     # if the match object is None or has too few groups.
                     try:
-                        # Attempt to extract groups based on expected_groups count
-                        if match and len(match.groups()) == expected_groups:
+                        # CRITICAL CHANGE: Only check for 'if match' to force extraction 
+                        # even if group counts are technically incorrect (best effort).
+                        if match:
                             for i in range(expected_groups):
                                 field_name = field_names[i]
+                                # This line will throw an IndexError if match.group(i + 1) does not exist
                                 field_value = match.group(i + 1).strip()
                                 entry["Fields"][field_name] = field_value
                             
                             parsed_lines_count += 1
                             is_matched_and_extracted = True
                         else:
-                            # If match failed or group count mismatch, fall through to forced entry creation
-                            raise ValueError("Forced fallback due to match failure or group count mismatch.")
+                            # If match failed, fall through to forced entry creation
+                            raise ValueError("Forced fallback due to match failure.")
                         
                     except (AttributeError, IndexError, ValueError):
                         # Attribute Error if match is None, Index Error if group count is wrong, ValueError from explicit raise
                         # --- UNMATCHED LINE / BEST-EFFORT LOGIC (The Forced Fallback) ---
+                        
+                        # --- DEBUGGING INSERT START ---
+                        match_status = "No Match" if match is None else f"Group Index Error (Groups < {expected_groups})"
+                        print(f"DEBUG PARSE: Match Failed on line {total_lines}: {match_status}. Line: {line[:80]}...", file=sys.stderr)
+                        # --- DEBUGGING INSERT END ---
                         
                         # Set all non-catch-all fields to N/A
                         for field_name in other_field_names:
