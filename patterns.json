@@ -1,46 +1,41 @@
 [
   {
-    "pattern": "^\\[(\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}:\\d{2})\\]\\s*(INFO|WARN|ERROR|DEBUG|TRACE|FATAL):\\s*(.*)$",
-    "description": "Specific SampleLog: [YYYY-MM-DD HH:MM:SS] LEVEL: Message",
+    "pattern": "[{Timestamp}] {Level}: {Message}",
+    "description": "Specific SampleLog: [YYYY-MM-DD HH:MM:SS] LEVEL: Message (Standard Parse)",
     "field_names": [ "Timestamp", "Level", "Message" ]
   },
   {
-    "pattern": "^(\\[\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?\\])\\s*(\\S+):?\\s*(.*)$",
+    "pattern": "[{Timestamp}] {Level}:{Message}",
     "description": "Standard: [YYYY-MM-DD HH:MM:SS(.ms)] LEVEL(:) Message (Flexible)",
     "field_names": [ "Timestamp", "Level", "Message" ]
   },
   {
-    "pattern": "^(\\d{4}/\\d{2}/\\d{2}\\s\\d{2}:\\d{2}:\\d{2})\\s*[- ]\\s*(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)\\s*[- ]\\s*(.*)$",
-    "description": "Alternative: YYYY/MM/DD HH:MM:SS - LEVEL - Message (More Levels/Flexible Separator)",
+    "pattern": "{Timestamp} - {Level} - {Message}",
+    "description": "Alternative: YYYY/MM/DD HH:MM:SS - LEVEL - Message",
     "field_names": [ "Timestamp", "Level", "Message" ]
   },
   {
-    "pattern": "^(\\[.*?\\])\\s*\\[(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)\\]\\s*\\[(.*?)\\]\\s*(.*)$",
-    "description": "Log4j/Structured Style: [Timestamp] [LEVEL] [Thread/Context] Message (More Levels)",
+    "pattern": "[{Timestamp}] [{Level}] [{Thread}] {Message}",
+    "description": "Log4j/Structured Style: [Timestamp] [LEVEL] [Thread/Context] Message",
     "field_names": [ "Timestamp", "Level", "Thread", "Message" ]
   },
   {
-    "pattern": "^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z)\\s*[- ]\\s*(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)\\s*[- ]\\s*(.*)$",
-    "description": "ISO 8601 UTC: YYYY-MM-DDTHH:MM:SS.sssZ - LEVEL - Message",
-    "field_names": [ "Timestamp", "Level", "Message" ]
+    "pattern": "{RemoteHost:S} - {ClientIdentity:S} [{DateTime}] \"{Method:S} {Resource:S} {Protocol:S}\" {Status:d} {Bytes}",
+    "description": "Apache/NGINX Access Log (Combined Format - Robust Tokens)",
+    "field_names": [ "RemoteHost", "ClientIdentity", "DateTime", "Method", "Resource", "Protocol", "Status", "Bytes" ]
   },
   {
-    "pattern": "^(\\S+)\\s+(\\S+)\\s+(\\S+)\\s+\\[(.*?)\\]\\s+\"(\\S+)\\s+(\\S+)\\s+(\\S+)\"\\s+(\\S+)\\s+(\\S+)\\s*$",
-    "description": "Apache/NGINX Access Log (Combined Format)",
-    "field_names": [ "RemoteHost", "ClientIdentity", "User", "DateTime", "Method", "Resource", "Protocol", "Status", "Bytes" ]
-  },
-  {
-    "pattern": "^(\\S+)\\s+(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)\\s+\\[(.*?)\\]\\s+(.*)$",
+    "pattern": "{Timestamp} {Level} [{Context}] {Message}",
     "description": "Simple Token Log: Date/Time LEVEL [Context] Message",
     "field_names": [ "Timestamp", "Level", "Context", "Message" ]
   },
   {
-    "pattern": "^(\\[(.*?)])\\s*\\[(.*?)\\]\\s*(.*)$",
+    "pattern": "[{Field1}] [{Field2}] {Message}",
     "description": "Generic: [Field 1] [Field 2] Message (Generic bracketed fields)",
     "field_names": [ "Field1", "Field2", "Message" ]
   },
   {
-    "pattern": "^(\\S+)\\s+(\\S+)\\s+(.*)$",
+    "pattern": "{Token1} {Token2} {Message}",
     "description": "Generic: First two words as fields, rest as message.",
     "field_names": [ "Token1", "Token2", "Message" ]
   }

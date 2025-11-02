@@ -2,7 +2,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
-using System.Text.RegularExpressions;
+using System.Text.RegularExpressions; // Keep this import, but we will avoid using its methods
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -32,7 +32,7 @@ namespace Log_Analyzer_App
 
     /// <summary>
     /// Interaction logic for RegexBuilderWindow.xaml
-    /// A modal dialog that allows users to create and test custom regex patterns and name the fields.
+    /// A modal dialog that allows users to create and test custom parse templates and name the fields.
     /// </summary>
     public partial class RegexBuilderWindow : Window, INotifyPropertyChanged
     {
@@ -41,8 +41,8 @@ namespace Log_Analyzer_App
         // The input log line provided by the main view
         public string LogLinePreview { get; }
 
-        // The regex pattern being edited by the user
-        private string _customRegex;
+        // The parse template being edited by the user
+        private string _customRegex; // Renamed 'CustomTemplate' mentally, but keep 'CustomRegex' for XAML binding compatibility
         public string CustomRegex
         {
             get => _customRegex;
@@ -68,8 +68,6 @@ namespace Log_Analyzer_App
         /// <summary>
         /// Initializes the modal with the current log pattern and the first log line.
         /// </summary>
-        /// <param name="firstLogLine">The first non-empty line of the log file.</param>
-        /// <param name="initialDefinition">The currently active pattern and field names.</param>
         public RegexBuilderWindow(string firstLogLine, LogPatternDefinition initialDefinition)
         {
             InitializeComponent();
@@ -79,27 +77,16 @@ namespace Log_Analyzer_App
             CustomRegex = initialDefinition.Pattern;
             PatternDescription = initialDefinition.Description;
 
-            // Initialize the FieldDefinitions from the initial data's field names
-            // This ensures that if the user clicks "Custom Pattern" after using the default,
-            // the fields are pre-populated with "Timestamp", "Level", and "Message".
-            for (int i = 0; i < initialDefinition.FieldNames.Count; i++)
-            {
-                FieldDefinitions.Add(new FieldDefinition
-                {
-                    GroupIndex = i + 1,
-                    FieldName = initialDefinition.FieldNames[i],
-                    PreviewValue = "N/A" // Will be updated by TestPattern()
-                });
-            }
-
             // Run the test immediately to show initial state
             TestPattern();
         }
 
-        // --- Core Regex Testing Logic ---
+        // --- Core Template Testing Logic ---
 
         /// <summary>
-        /// Tests the current custom regex against the log line preview in real-time.
+        /// Attempts to parse the custom template and identify placeholder fields.
+        /// NOTE: This does NOT use the Python parser; it uses C# logic to identify 
+        /// the named fields ({...}) in the template string.
         /// </summary>
         private void TestPattern()
         {
@@ -118,84 +105,108 @@ namespace Log_Analyzer_App
 
             if (string.IsNullOrWhiteSpace(CustomRegex))
             {
-                MatchStatusTextBlock.Text = "Status: Enter a regex pattern above.";
+                MatchStatusTextBlock.Text = "Status: Enter a parse template above (use {...}).";
                 return;
             }
 
+            // --- 1. IDENTIFY FIELDS IN TEMPLATE (C# equivalent to parse.compile()._names) ---
+            var placeholderRegex = new Regex(@"\{(?<name>.*?)\}");
+            var templateMatches = placeholderRegex.Matches(CustomRegex);
+
+            // Create a list of unique field names extracted from the template
+            var uniqueFieldNames = templateMatches
+                .Select(m => m.Groups["name"].Value.Trim())
+                .Where(name => !string.IsNullOrEmpty(name))
+                .Distinct()
+                .ToList();
+
+            // --- 2. PREVIEW LOGIC (STILL USES REGEX TO FAKE PARSING FOR PREVIEW) ---
+            // Because C# does not have the 'parse' library, we temporarily convert the template 
+            // back to a rough regex for the preview value only.
+
+            // This replacement is very rough and is ONLY for UI preview, not actual parsing.
+            string previewRegexPattern = CustomRegex;
+            foreach (string name in uniqueFieldNames)
+            {
+                // Replace named placeholders with a non-greedy capture group
+                previewRegexPattern = previewRegexPattern.Replace($"{{{name}}}", "(.*?)");
+            }
+            // Ensure the entire line is considered for match
+            previewRegexPattern = "^" + previewRegexPattern + "$";
+
+            Match previewMatch = null;
             try
             {
-                var regex = new Regex(CustomRegex);
-                Match match = regex.Match(LogLinePreview);
-
-                // Group 0 is the full match, so we iterate from 1 up.
-                int totalCaptureGroups = match.Groups.Count - 1;
-
-                if (!match.Success)
-                {
-                    MatchStatusTextBlock.Text = "Status: NO MATCH found on the log line.";
-                    MatchStatusTextBlock.Foreground = Brushes.Red;
-                    return;
-                }
-
-                // Populate FieldDefinitions list with detected groups and their preview values
-                for (int i = 1; i <= totalCaptureGroups; i++)
-                {
-                    string initialName = "";
-
-                    // Attempt to pre-fill name from the previous state (oldDefinitions)
-                    if (oldDefinitions.ContainsKey(i))
-                    {
-                        initialName = oldDefinitions[i];
-                    }
-                    // Apply default names for the first few columns if not already named
-                    else if (i == 1) initialName = "Timestamp";
-                    else if (i == 2) initialName = "Level";
-                    else if (i == 3) initialName = "Message";
-                    else initialName = $"Column {i}";
-
-
-                    FieldDefinitions.Add(new FieldDefinition
-                    {
-                        GroupIndex = i,
-                        FieldName = initialName,
-                        PreviewValue = match.Groups[i].Value.Trim()
-                    });
-                }
-
-                // Check for success conditions: at least one group and all groups named
-                if (totalCaptureGroups > 0)
-                {
-                    MatchStatusTextBlock.Text = $"Status: SUCCESS! Found {totalCaptureGroups} capture groups. Please name them all.";
-                    MatchStatusTextBlock.Foreground = Brushes.Blue;
-
-                    // The logic for SaveButton.IsEnabled now moves to a dedicated check
-                    UpdateSaveButtonState();
-                }
-                else
-                {
-                    MatchStatusTextBlock.Text = "Status: Match found, but NO CAPTURE GROUPS detected (need parentheses '()').";
-                    MatchStatusTextBlock.Foreground = Brushes.Orange;
-                }
-
+                previewMatch = System.Text.RegularExpressions.Regex.Match(LogLinePreview, previewRegexPattern);
             }
             catch (ArgumentException)
             {
-                // Invalid regex pattern compilation error
-                MatchStatusTextBlock.Text = "Status: ERROR - Invalid Regex Syntax (check syntax).";
+                MatchStatusTextBlock.Text = "Status: ERROR - Template generates invalid Regex. Check for misplaced braces/chars.";
                 MatchStatusTextBlock.Foreground = Brushes.Red;
+                return;
+            }
+
+            // --- 3. POPULATE FIELD DEFINITIONS ---
+            if (uniqueFieldNames.Count > 0)
+            {
+                for (int i = 0; i < uniqueFieldNames.Count; i++)
+                {
+                    string fieldName = uniqueFieldNames[i];
+                    string previewValue = "N/A";
+
+                    // Try to get the actual preview value if the rough regex matched
+                    // Note: Groups.Count includes group 0, so we check group i + 1
+                    if (previewMatch != null && previewMatch.Success && i + 1 < previewMatch.Groups.Count)
+                    {
+                        previewValue = previewMatch.Groups[i + 1].Value.Trim();
+                    }
+
+                    string initialName = "";
+
+                    // Attempt to pre-fill name from the previous state (oldDefinitions)
+                    if (oldDefinitions.ContainsKey(i + 1))
+                    {
+                        initialName = oldDefinitions[i + 1];
+                    }
+                    else
+                    {
+                        // Apply default names based on position
+                        if (i == 0) initialName = "Timestamp";
+                        else if (i == 1) initialName = "Level";
+                        else if (i == 2) initialName = "Message";
+                        else initialName = fieldName; // Use the placeholder name as default
+                    }
+
+                    FieldDefinitions.Add(new FieldDefinition
+                    {
+                        GroupIndex = i + 1,
+                        FieldName = initialName,
+                        PreviewValue = previewValue
+                    });
+                }
+
+                MatchStatusTextBlock.Text = $"Status: Found {uniqueFieldNames.Count} unique fields. Please name them all.";
+                MatchStatusTextBlock.Foreground = Brushes.Blue;
+
+                UpdateSaveButtonState();
+            }
+            else
+            {
+                MatchStatusTextBlock.Text = "Status: No fields detected. Use braces like {Timestamp}.";
+                MatchStatusTextBlock.Foreground = Brushes.Orange;
             }
         }
 
         /// <summary>
         /// Checks if all necessary conditions for saving are met: 
-        /// 1. Regex is valid and matched. 2. At least one group found. 3. All found groups are named.
+        /// 1. At least one field found. 2. All found fields are named.
         /// </summary>
         private void UpdateSaveButtonState()
         {
             if (FieldDefinitions.Any() && FieldDefinitions.All(f => !string.IsNullOrWhiteSpace(f.FieldName)))
             {
                 SaveButton.IsEnabled = true;
-                MatchStatusTextBlock.Text = $"Status: READY TO SAVE. Found {FieldDefinitions.Count} groups, all are named.";
+                MatchStatusTextBlock.Text = $"Status: READY TO SAVE. Found {FieldDefinitions.Count} fields, all are named.";
                 MatchStatusTextBlock.Foreground = Brushes.Blue;
             }
             else
@@ -203,7 +214,7 @@ namespace Log_Analyzer_App
                 SaveButton.IsEnabled = false;
                 if (FieldDefinitions.Any())
                 {
-                    MatchStatusTextBlock.Text = $"Status: Please name all {FieldDefinitions.Count} capture groups to enable save.";
+                    MatchStatusTextBlock.Text = $"Status: Please name all {FieldDefinitions.Count} fields to enable save.";
                     MatchStatusTextBlock.Foreground = Brushes.Orange;
                 }
             }
@@ -243,7 +254,7 @@ namespace Log_Analyzer_App
             // Ensure a description is present
             if (string.IsNullOrWhiteSpace(PatternDescription))
             {
-                PatternDescription = $"Custom Pattern: {CustomRegex}";
+                PatternDescription = $"Custom Template: {CustomRegex}";
             }
 
             // Create the final data structure to return
@@ -251,6 +262,7 @@ namespace Log_Analyzer_App
             {
                 Pattern = CustomRegex,
                 Description = PatternDescription,
+                // Ensure field names are returned in the correct order (based on FieldDefinitions ordering)
                 FieldNames = FieldDefinitions.Select(f => f.FieldName.Trim()).ToList()
             };
 
