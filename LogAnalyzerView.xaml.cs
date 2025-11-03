@@ -550,8 +550,36 @@ namespace Log_Analyzer_App
         /// <returns>A List of LogEntry objects (for parse) or null.</returns>
         private List<LogEntry> RunPythonParser(string command, string filePath, string logPattern, List<string> fieldNames, bool isBestEffortParse = false)
         {
-            string pythonExecutable = "python";
-            string scriptPath = "log_parser.py";
+            // --- FIX: Resolve 'parse' library not found error by explicitly pointing to the VENV python.exe ---
+            //
+            // The Python script (log_parser.py) relies on the 'parse' library, which is likely installed 
+            // only in the project's virtual environment (env). When debugging, the default 'python' 
+            // command may point to a global interpreter without this package.
+            //
+            // We calculate the path to the virtual environment's python.exe assuming the C# executable
+            // is in the output directory (e.g., bin/Debug/net8.0-windows/) and the venv is in 
+            // the solution root's ParsingScript/env folder.
+
+            string currentDir = AppDomain.CurrentDomain.BaseDirectory;
+            // Traverse up three directories from the C# executable (e.g., bin/Debug/net8.0-windows/) 
+            // to reach the solution root.
+            string solutionRoot = Path.GetFullPath(Path.Combine(currentDir, "..", "..", ".."));
+
+            // Construct the path to the virtual environment's python.exe
+            string pythonExecutable = Path.Combine(solutionRoot, "ParsingScript", "env", "Scripts", "python.exe");
+
+            // Fallback: If the virtual environment path is invalid (e.g., on a machine without the venv), 
+            // we fall back to the system-wide 'python' executable, which relies on the user having 
+            // run 'pip install parse' in their global environment.
+            if (!File.Exists(pythonExecutable))
+            {
+                pythonExecutable = "python";
+                // Log this fallback for debugging
+                Console.WriteLine("Warning: Virtual environment python.exe not found. Falling back to global 'python' command.");
+            }
+
+            // The script path is relative to the C# application's output directory
+            string scriptPath = "C_log_parser.py";
             string arguments;
 
             // FIX: Explicitly include the scriptPath in the arguments for reliable execution.

@@ -21,4 +21,8 @@
     </None>
   </ItemGroup>
 
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="copy /Y &quot;$(SolutionDir)ParsingScript\log_parser.py&quot; &quot;$(TargetDir)C_log_parser.py&quot;" />
+  </Target>
+
 </Project>

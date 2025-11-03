@@ -98,8 +98,9 @@ def suggest_robust_pattern(file_path):
         # Iterate through all patterns and score them
         for pattern_def in COMMON_LOG_PATTERNS:
             try:
-                # FIX: Removed fuzzy=True
-                template = parse.compile(pattern_def["pattern"]) 
+                # Use the 'parse' library to compile the template
+                # NOTE: We use fuzzy=True here to ensure the suggestion logic is also highly tolerant of spacing
+                template = parse.compile(pattern_def["pattern"], fuzzy=True)
                 
                 expected_groups = len(pattern_def["field_names"])
                 current_score = 0
@@ -136,46 +137,14 @@ def suggest_robust_pattern(file_path):
 def parse_log_file(file_path, log_pattern, field_names, is_best_effort=False):
     """
     Reads a log file, parses each line using the provided parse template.
-    For best-effort mode, it aggressively modifies the template to ensure all content is captured.
+    Uses fuzzy matching for maximum forgiveness.
     """
     parsed_entries = []
     total_lines = 0
 
     try:
-        # AGGRESSIVE MODIFICATION: For best-effort, ensure the last field consumes everything remaining.
-        # This prevents the parser from returning 'None' due to trailing characters/whitespace.
-        if is_best_effort:
-            # We assume the user's template is correct up to the last field.
-            # We change the last field placeholder to a simple greedy string capture.
-            
-            # 1. Find the last placeholder in the string, including any format specifiers (like :S)
-            last_placeholder_start = log_pattern.rfind('{')
-            last_placeholder_end = log_pattern.rfind('}')
-            
-            if last_placeholder_start != -1 and last_placeholder_end != -1 and last_placeholder_end > last_placeholder_start:
-                # 2. Get the field name of the last placeholder (e.g., "{Message:S}")
-                field_name_with_spec = log_pattern[last_placeholder_start + 1: last_placeholder_end]
-                
-                # 3. Modify the original pattern to replace the last placeholder with a simple named string capture
-                # The 'g' specifier ensures it captures everything until the end of the line (or next delimiter, but since it's last, it gets everything)
-                # Note: We must ensure the field name is preserved, so we use its name with the default string format.
-                
-                # Find just the field name without specifiers (e.g., 'Message' from 'Message:S')
-                field_name = field_name_with_spec.split(':')[0]
-                
-                # The '.*' modification used in previous attempts is for Regex. 
-                # For `parse`, the most reliable way to be greedy is to ensure the last field is not followed by any rigid character (like space) 
-                # and let it consume everything.
-                
-                # Simple concatenation of '.*' might cause issues with `parse`. The safest way is to ensure the field type is generic.
-                
-                # REVERTING to the simplest pattern modification that is compatible with `parse` syntax:
-                # Just compile the original pattern. The `parse` library's nature (combined with the template logic from patterns.json) 
-                # is typically enough to handle greediness if the template is well-formed.
-                pass # Relying on the robust template structure now.
-
-
-        LOG_TEMPLATE = parse.compile(log_pattern)
+        # Compile the template using fuzzy=True for maximum forgiveness on spacing and delimiters.
+        LOG_TEMPLATE = parse.compile(log_pattern, fuzzy=True)
         
         expected_fields = set(field_names)
         
@@ -201,7 +170,7 @@ def parse_log_file(file_path, log_pattern, field_names, is_best_effort=False):
                 }
 
                 if result is not None:
-                    # --- SUCCESSFUL PARSING (The successful and forgiving path) ---
+                    # --- SUCCESSFUL PARSING (Parse Library is inherently forgiving) ---
                     # Populate all expected fields from the result
                     for field_name in expected_fields:
                         if field_name in result.named:
@@ -215,7 +184,6 @@ def parse_log_file(file_path, log_pattern, field_names, is_best_effort=False):
 
                 elif is_best_effort:
                     # --- FAILED PARSING IN BEST-EFFORT MODE (Fallback) ---
-                    # This triggers if the line fails to match the prefix of the template at all.
                     
                     # Set all structured fields to a placeholder value
                     for field_name in other_field_names:
@@ -226,7 +194,7 @@ def parse_log_file(file_path, log_pattern, field_names, is_best_effort=False):
                     
                     parsed_entries.append(entry)
                 
-                # In strict mode (is_best_effort=False), failed lines are simply skipped (resulting in an empty list if nothing matches).
+                # In strict mode (is_best_effort=False), failed lines are simply skipped (not added to parsed_entries).
 
         # In strict mode, if zero lines matched, return an error (standard log parsing expectation)
         if not is_best_effort and not parsed_entries and total_lines > 0:
