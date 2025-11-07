@@ -101,9 +101,11 @@ namespace Log_Analyzer_App
             if (LogEntries.Any())
             {
                 // Get the name of the 'Level' field, which is expected to be the second field (index 1)
+                // We use the FieldOrder (which corresponds to the parsed column names)
                 string levelFieldName = LogDataStore.CurrentPatternDefinition.FieldNames.Count > 1
-                    ? LogDataStore.CurrentPatternDefinition.FieldNames[1]
-                    : "Level";
+                    ? LogDataStore.CurrentPatternDefinition.FieldNames.FirstOrDefault(name => name.IndexOf("level", StringComparison.OrdinalIgnoreCase) >= 0) // Try to find 'Level' explicitly
+                    ?? LogDataStore.CurrentPatternDefinition.FieldNames[1] // Fallback to second position
+                    : "Level"; // Fallback to hardcoded key 'Level'
 
                 // Group by Level and count
                 var counts = LogEntries
@@ -235,7 +237,7 @@ namespace Log_Analyzer_App
                     // Give Timestamp/Level a fixed width and Message a star width for better default appearance
                     // NOTE: Since the column names are dynamic, we use a simple heuristic for size,
                     // or let the width auto-adjust.
-                    Width = (fieldName.Contains("Timestamp") || fieldName.Contains("Level") || fieldName.Length < 10)
+                    Width = (fieldName.Contains("Timestamp") || fieldName.Contains("Level") || fieldName.Length < 10 || fieldName.Contains("unnamed"))
                         ? DataGridLength.Auto
                         : new DataGridLength(1, DataGridLengthUnitType.Star),
                     IsReadOnly = true,
@@ -414,7 +416,7 @@ namespace Log_Analyzer_App
 
         /// <summary>
         /// UPDATED: Handles the click to configure a custom pattern by opening the builder modal.
-        /// CRITICAL FIX: Pass isBestEffort=false to enforce strict parsing (user expects all lines to match custom pattern).
+        /// CRITICAL FIX: isBestEffort is now set to TRUE here as requested.
         /// </summary>
         private void CustomPattern_Click(object sender, RoutedEventArgs e)
         {
@@ -446,8 +448,10 @@ namespace Log_Analyzer_App
                 // logic can find the file.
                 LogDataStore.SelectedFileForParsing = LogDataStore.OriginalFilePath;
 
-                // 3. Start parsing immediately with the custom pattern. Strict check is enforced.
-                StartParsingWithPattern(isBestEffortParse: false);
+                // 3. Start parsing immediately with the custom pattern. 
+                // We set isBestEffortParse to TRUE as requested, allowing lines that fail to parse
+                // to be displayed as [UNPARSED] instead of causing a fatal error.
+                StartParsingWithPattern(isBestEffortParse: true);
             }
         }
 
@@ -485,6 +489,14 @@ namespace Log_Analyzer_App
                 // 3. Clear static collection and replace with new data
                 _logEntries.Clear();
 
+                // IMPORTANT: The Python script may have modified the FieldNames list if it found
+                // unnamed fields (like 'unnamed_1'). We must update the C# store before setting up columns.
+                if (logEntries.Any())
+                {
+                    // Use the FieldOrder returned by the first log entry, as this defines the new dynamic columns
+                    LogDataStore.CurrentPatternDefinition.FieldNames = logEntries.First().FieldOrder;
+                }
+
                 // --- NEW COLUMN LOGIC: MUST BE CALLED BEFORE ADDING ENTRIES ---
                 SetupDynamicColumns();
                 // -------------------------
@@ -492,7 +504,7 @@ namespace Log_Analyzer_App
                 foreach (var entry in logEntries)
                 {
                     // CRITICAL: Ensure the FieldOrder is set on every entry for the derived properties to work
-                    entry.FieldOrder = definition.FieldNames;
+                    entry.FieldOrder = LogDataStore.CurrentPatternDefinition.FieldNames;
                     _logEntries.Add(entry);
                 }
 

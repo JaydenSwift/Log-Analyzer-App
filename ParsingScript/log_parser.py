@@ -3,25 +3,39 @@ import parse
 import json
 import os
 from itertools import islice
+from typing import List, Dict, Any
 
 # --- Configuration ---
 # Number of lines to check for robust pattern suggestion
 ROBUST_CHECK_LINES = 5
 # ---------------------
 
+# --- Helper to dynamically extract field names from a parse template ---
+def extract_field_names(pattern: str) -> list:
+    """Uses the parse library to extract the list of named fields from a template."""
+    try:
+        # We rely on parse.compile to get the field names for the C# UI.
+        return list(parse.compile(pattern).named_fields)
+    except Exception:
+        # Return an empty list or a fallback if compilation fails
+        return []
+
 # --- Pattern Suggestion Data Loader ---
 
 def load_patterns():
     """
     Loads COMMON_LOG_PATTERNS from the external patterns.json file.
+    It dynamically generates the 'field_names' list from the 'pattern' string.
     If loading fails, it returns a minimal pattern list.
     """
     # Define a guaranteed valid minimal pattern for fallback situations
     MINIMAL_DEFAULT_PATTERN = [{
         "pattern": "{Token1} {Message}",
         "description": "Minimal Default (File/Format Error Fallback)",
-        "field_names": ["Token1", "Message"]
     }]
+    # Add field_names dynamically to the fallback pattern
+    MINIMAL_DEFAULT_PATTERN[0]["field_names"] = extract_field_names(MINIMAL_DEFAULT_PATTERN[0]["pattern"])
+
 
     try:
         # Get the directory of the *currently executing script file* regardless of the CWD.
@@ -33,14 +47,27 @@ def load_patterns():
             return MINIMAL_DEFAULT_PATTERN
 
         with open(patterns_path, 'r') as f:
-            patterns = json.load(f)
+            raw_patterns = json.load(f)
             
-            if isinstance(patterns, list) and all(isinstance(p, dict) for p in patterns):
-                if not patterns:
+            if isinstance(raw_patterns, list) and all(isinstance(p, dict) for p in raw_patterns):
+                if not raw_patterns:
                     print("WARNING: patterns.json is empty. Providing minimal default pattern.", file=sys.stderr)
                     return MINIMAL_DEFAULT_PATTERN
-                    
-                return patterns
+                
+                # CRITICAL: Dynamically add 'field_names' to each pattern dictionary
+                processed_patterns = []
+                for p in raw_patterns:
+                    if "pattern" in p:
+                        # Extract the field names from the template string
+                        p["field_names"] = extract_field_names(p["pattern"])
+                        processed_patterns.append(p)
+
+                # If no valid patterns were processed, fall back
+                if not processed_patterns:
+                     print("ERROR: No valid patterns found after processing. Returning minimal default.", file=sys.stderr)
+                     return MINIMAL_DEFAULT_PATTERN
+                     
+                return processed_patterns
             else:
                 print("ERROR: patterns.json loaded, but data format is invalid (not a list of objects). Returning minimal default.", file=sys.stderr)
                 return MINIMAL_DEFAULT_PATTERN
@@ -57,7 +84,7 @@ def load_patterns():
 # Load patterns once when the script starts
 COMMON_LOG_PATTERNS = load_patterns()
 
-# --- Pattern Suggestion Logic (UPDATED for 'parse') ---
+# --- Pattern Suggestion Logic (Uses parse.search) ---
 
 def suggest_robust_pattern(file_path):
     """
@@ -65,11 +92,8 @@ def suggest_robust_pattern(file_path):
     ROBUST_CHECK_LINES of the log file using a scoring system.
     """
     if not COMMON_LOG_PATTERNS:
-        return {
-            "pattern": "{Token1} {Message}",
-            "description": "Critical Error Fallback",
-            "field_names": ["Token1", "Message"]
-        }
+        # The fallback pattern already has field_names added in load_patterns
+        return load_patterns()[0]
 
     initial_best_def = COMMON_LOG_PATTERNS[0]
     
@@ -93,19 +117,20 @@ def suggest_robust_pattern(file_path):
             
         best_pattern_def = initial_best_def
         highest_score = 0
+        # Use the count of dynamically extracted field names
         max_capture_groups = len(initial_best_def["field_names"])
 
         # Iterate through all patterns and score them
         for pattern_def in COMMON_LOG_PATTERNS:
             try:
-                # FIX: Removed fuzzy=True
-                template = parse.compile(pattern_def["pattern"]) 
+                # Use parse.search for suggestion check (single-use)
                 
                 expected_groups = len(pattern_def["field_names"])
                 current_score = 0
                 
                 for line in log_lines_to_check:
-                    result = template.parse(line)
+                    # Use parse.search for a single-use match check
+                    result = parse.search(pattern_def["pattern"], line)
                     
                     # A match is successful if 'result' is not None and the number of parsed items matches expected
                     if result is not None and len(result.named) == expected_groups:
@@ -131,102 +156,122 @@ def suggest_robust_pattern(file_path):
         return initial_best_def
 
 
-# --- Core Parsing Logic (UPDATED for 'parse' and Forgiveness) ---
+# --- Core Parsing Logic (Field Name Logic Removed) ---
 
-def parse_log_file(file_path, log_pattern, field_names, is_best_effort=False):
+def parse_log_file(file_path, log_pattern, field_names: List[str], is_best_effort: bool = False):
     """
     Reads a log file, parses each line using the provided parse template.
-    For best-effort mode, it aggressively modifies the template to ensure all content is captured.
+    It ignores the input field_names for parsing and determines fields dynamically.
+    The original field_names is only used for the output structure (FieldOrder).
     """
-    parsed_entries = []
+    parsed_entries: List[Dict[str, Any]] = []
     total_lines = 0
+    failed_lines = 0
+    lines: List[tuple[int, str]] = []
 
     try:
-        # AGGRESSIVE MODIFICATION: For best-effort, ensure the last field consumes everything remaining.
-        # This prevents the parser from returning 'None' due to trailing characters/whitespace.
-        if is_best_effort:
-            # We assume the user's template is correct up to the last field.
-            # We change the last field placeholder to a simple greedy string capture.
-            
-            # 1. Find the last placeholder in the string, including any format specifiers (like :S)
-            last_placeholder_start = log_pattern.rfind('{')
-            last_placeholder_end = log_pattern.rfind('}')
-            
-            if last_placeholder_start != -1 and last_placeholder_end != -1 and last_placeholder_end > last_placeholder_start:
-                # 2. Get the field name of the last placeholder (e.g., "{Message:S}")
-                field_name_with_spec = log_pattern[last_placeholder_start + 1: last_placeholder_end]
-                
-                # 3. Modify the original pattern to replace the last placeholder with a simple named string capture
-                # The 'g' specifier ensures it captures everything until the end of the line (or next delimiter, but since it's last, it gets everything)
-                # Note: We must ensure the field name is preserved, so we use its name with the default string format.
-                
-                # Find just the field name without specifiers (e.g., 'Message' from 'Message:S')
-                field_name = field_name_with_spec.split(':')[0]
-                
-                # The '.*' modification used in previous attempts is for Regex. 
-                # For `parse`, the most reliable way to be greedy is to ensure the last field is not followed by any rigid character (like space) 
-                # and let it consume everything.
-                
-                # Simple concatenation of '.*' might cause issues with `parse`. The safest way is to ensure the field type is generic.
-                
-                # REVERTING to the simplest pattern modification that is compatible with `parse` syntax:
-                # Just compile the original pattern. The `parse` library's nature (combined with the template logic from patterns.json) 
-                # is typically enough to handle greediness if the template is well-formed.
-                pass # Relying on the robust template structure now.
-
-
-        LOG_TEMPLATE = parse.compile(log_pattern)
-        
-        expected_fields = set(field_names)
-        
-        # Determine the name of the catch-all field (the last field name)
-        catch_all_field_name = field_names[-1] if field_names else "Message"
-        
-        # Determine the field names that aren't the catch-all field
-        other_field_names = field_names[:-1] if field_names else []
-
         with open(file_path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                
-                total_lines += 1 # Count non-empty lines
-                
-                result = LOG_TEMPLATE.parse(line)
-                
-                entry = {
-                    "Fields": {},
-                    "FieldOrder": field_names 
-                }
+            # Prepare a list of non-empty lines, keeping track of the original line number
+            raw_lines = f.readlines()
+            for i, line in enumerate(raw_lines):
+                stripped_line = line.strip()
+                if stripped_line:
+                    # Store tuple of (line_number, stripped_content)
+                    lines.append((i + 1, stripped_line))
+        
+        if not lines:
+            # Handle empty file case
+            return {
+                "success": True, 
+                "data": []
+            }
+            
+        total_lines = len(lines)
+        
+        # --- NEW LOGIC: Determine the expected field names dynamically from the pattern
+        # This list will include only the NAMED fields, used for filtering output
+        expected_named_fields = extract_field_names(log_pattern)
 
-                if result is not None:
-                    # --- SUCCESSFUL PARSING (The successful and forgiving path) ---
-                    # Populate all expected fields from the result
-                    for field_name in expected_fields:
-                        if field_name in result.named:
-                            # Use the parsed value
-                            entry["Fields"][field_name] = str(result.named[field_name]).strip()
-                        else:
-                            # If a field was in the template but not extracted, use a placeholder.
-                            entry["Fields"][field_name] = "--- (Missing Field)"
 
-                    parsed_entries.append(entry)
+        for i, (line_num, line) in enumerate(lines):
+            # Use parse.parse()
+            result = parse.parse(log_pattern, line)
+            
+            entry: Dict[str, Any] = {
+                "Fields": {},
+                # We retain the input field_names list here for C# structural compatibility
+                "FieldOrder": field_names 
+            }
 
-                elif is_best_effort:
-                    # --- FAILED PARSING IN BEST-EFFORT MODE (Fallback) ---
-                    # This triggers if the line fails to match the prefix of the template at all.
-                    
-                    # Set all structured fields to a placeholder value
-                    for field_name in other_field_names:
-                        entry["Fields"][field_name] = "---"
-                    
-                    # Put the entire line content into the designated catch-all field
-                    entry["Fields"][catch_all_field_name] = f"[UNPARSED] {line}"
-                    
-                    parsed_entries.append(entry)
+            if result:
+                # --- SUCCESSFUL PARSING (Replicating ParsingTest.py logic) ---
                 
-                # In strict mode (is_best_effort=False), failed lines are simply skipped (resulting in an empty list if nothing matches).
+                # 1. Combine named results
+                data = result.named.copy()
+                
+                # 2. Append unnamed/fixed fields, naming them numerically
+                for j, fixed_val in enumerate(result.fixed):
+                    key = f"unnamed_{j+1}"
+                    # Use the key as the field name, avoiding collisions
+                    if key not in data: 
+                        data[key] = fixed_val
+
+                # 3. Transfer ALL dynamically found results to the C# Fields dictionary
+                # The C# client is responsible for showing the correct columns
+                
+                # Use all dynamically found keys (named + unnamed)
+                all_found_keys = list(data.keys())
+                
+                # The C# application expects the output fields dictionary to match the FieldOrder.
+                # Since we want to use dynamically discovered fields, we must update 
+                # FieldOrder *if* the template resulted in fixed/unnamed fields not known to C#.
+                
+                # For simplicity and robust parsing, we fill the 'Fields' dictionary 
+                # with everything found. The C# client must be updated to use the 
+                # keys of the 'Fields' dictionary dynamically.
+                
+                # Use the C# required field names as a primary output set
+                output_field_names = expected_named_fields.copy()
+                
+                # Add any unnamed fields discovered during parsing to the output field list
+                for key in all_found_keys:
+                    if key.startswith("unnamed_") and key not in output_field_names:
+                        output_field_names.append(key)
+                
+                # If the template changed, we must send back the new field order
+                if field_names != output_field_names and output_field_names:
+                     entry["FieldOrder"] = output_field_names
+                     
+                for key, val in data.items():
+                    entry["Fields"][key] = str(val).strip()
+
+                parsed_entries.append(entry)
+
+            elif is_best_effort:
+                # --- FAILED PARSING IN BEST-EFFORT MODE (Fallback) ---
+                # Fallback logic: put the whole line in the catch-all field
+
+                # Since we don't know the catch-all field name without checking the 
+                # original field_names list, we use a fixed fallback key 'FullLine'.
+                # This breaks the dependency on field_names for parsing logic.
+                fallback_key = "FullLine"
+                
+                # Clear existing fields and put the whole line in the fallback key
+                entry["Fields"] = {fallback_key: f"[UNPARSED] {line}"}
+                # Ensure C# knows about this fallback key
+                entry["FieldOrder"] = [fallback_key]
+                
+                parsed_entries.append(entry)
+                failed_lines += 1
+                
+                print(f"  [Error] Line {line_num} failed to parse: {line[:60]}...", file=sys.stderr)
+            
+            else:
+                # --- FAILED PARSING IN STRICT MODE ---
+                failed_lines += 1
+                
+                print(f"  [Error] Line {line_num} failed to parse: {line[:60]}...", file=sys.stderr)
+
 
         # In strict mode, if zero lines matched, return an error (standard log parsing expectation)
         if not is_best_effort and not parsed_entries and total_lines > 0:
@@ -234,7 +279,6 @@ def parse_log_file(file_path, log_pattern, field_names, is_best_effort=False):
                 "success": False,
                 "error": f"The custom template matched 0 of {total_lines} lines. Please verify your template."
             }
-
 
         return {
             "success": True, 
@@ -283,6 +327,7 @@ if __name__ == "__main__":
         is_best_effort = is_best_effort_str == "true"
         
         try:
+            # We still need to receive this argument from C#
             field_names = json.loads(field_names_json)
         except json.JSONDecodeError:
             error_output = json.dumps({
