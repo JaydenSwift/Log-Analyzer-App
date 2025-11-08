@@ -268,13 +268,11 @@ namespace Log_Analyzer_App
             if (_logEntries.Any())
             {
                 // File is loaded, update status and counts
-                PythonStatus.Text = $"Status: Log file ready for analysis. ({_logEntries.Count} entries)";
                 UpdateSummaryStatistics();
             }
             else
             {
                 // No file loaded
-                PythonStatus.Text = "Status: Waiting for log file...";
                 UpdateSummaryStatistics(true); // Clear counts
             }
 
@@ -292,19 +290,16 @@ namespace Log_Analyzer_App
             // If currently running the parser (show loading/status text)
             if (isParsing)
             {
-                PythonStatus.Visibility = Visibility.Visible;
                 ParsingChoicePanel.Visibility = Visibility.Collapsed;
             }
             // If a file is selected and we need a decision (show choice panel)
             else if (LogDataStore.SelectedFileForParsing != null || LogDataStore.OriginalFilePath != null)
             {
-                PythonStatus.Visibility = Visibility.Visible;
                 ParsingChoicePanel.Visibility = Visibility.Visible;
             }
             // If no file is selected/loaded, or parsing is complete and successful
             else
             {
-                PythonStatus.Visibility = Visibility.Visible;
                 ParsingChoicePanel.Visibility = Visibility.Collapsed;
                 // If log entries exist, show the Run Analysis button for future filtering features
             }
@@ -470,7 +465,6 @@ namespace Log_Analyzer_App
             // 1. Update UI to show processing is starting
             LogDataStore.CurrentFilePath = $"Processing file: {Path.GetFileName(filePath)}";
             ShowParserStatus(true); // Show loading spinner/status text, hide pattern choice
-            PythonStatus.Text = $"Status: Running Python parser with pattern: {definition.Pattern}... Please wait.";
             FilePathTextBlock.Text = LogDataStore.CurrentFilePath; // Update display
             LoadFileButton.IsEnabled = false; // Disable button during processing
 
@@ -539,7 +533,6 @@ namespace Log_Analyzer_App
                 else
                 {
                     // For best-effort, just update the status text
-                    PythonStatus.Text = $"Status: Failed to parse file fully. Displaying partial results if any. Error: {ex.Message}";
                     Console.WriteLine($"Best-effort parsing failed: {ex.Message}");
                 }
             }
@@ -722,7 +715,6 @@ namespace Log_Analyzer_App
 
                 // --- NEW DYNAMIC PATTERN SUGGESTION (Robust Check) ---
                 LoadFileButton.IsEnabled = false; // Disable button during suggestion
-                PythonStatus.Text = "Status: Analyzing log format and suggesting pattern (checking first 5 lines)...";
 
                 // Run the Python suggester command, passing the full file path for robust checking
                 await Task.Run(() => RunPythonParser("suggest_robust_pattern", openFileDialog.FileName, null, null));

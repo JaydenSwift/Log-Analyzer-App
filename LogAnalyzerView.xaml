@@ -31,7 +31,8 @@
                     <TextBlock x:Name="FilePathTextBlock" 
                                Text="No log file loaded. Click 'Load File' to begin analysis." 
                                VerticalAlignment="Center" 
-                               FontWeight="SemiBold" 
+                               FontWeight="SemiBold"
+                               TextWrapping="Wrap"
                                Opacity="0.7"/>
 
                     <Button Content="LOAD FILE" 
@@ -65,7 +66,7 @@
                               CanUserAddRows="False" 
                               HeadersVisibility="Column"
                               materialDesign:DataGridAssist.CellPadding="10"
-                              materialDesign:DataGridAssist.ColumnHeaderPadding="20 10"
+                              materialDesign:DataGridAssist.ColumnHeaderPadding="10 10"
                               Margin="15 0 15 15" 
                               SelectionChanged="DataGrid_SelectionChanged">
                         <!-- 
@@ -123,8 +124,6 @@
                                 </StackPanel>
                             </materialDesign:Card>
 
-                            <!-- Parsed Fields Preview -->
-                            <TextBlock Text="How the First Line is Split:" FontWeight="SemiBold" Opacity="0.8" Margin="0 0 0 5"/>
 
                             <!-- 
                             CRITICAL FIX: Replaced the fixed 3-row Grid with an ItemsControl 
@@ -168,14 +167,6 @@
                                     Margin="0 5 0 5"/>
 
                         </StackPanel>
-
-                        <!-- Python Status Text (Always visible, but its content changes based on state) -->
-                        <TextBlock Text="Status: Waiting for log file..." 
-                                   x:Name="PythonStatus" 
-                                   Margin="0 5 0 0" 
-                                   Foreground="Gray" 
-                                   FontWeight="SemiBold" 
-                                   Visibility="Visible"/>
 
                     </StackPanel>
                 </materialDesign:Card>
