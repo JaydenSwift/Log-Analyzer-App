@@ -227,6 +227,9 @@ namespace Log_Analyzer_App
                 fieldNames = new List<string> { "Message" };
             }
 
+            // Identify the last column for the Auto sizing with large MinWidth
+            string lastFieldName = fieldNames.LastOrDefault();
+
             // Iterate through the user-defined field names in their correct order
             foreach (string fieldName in fieldNames)
             {
@@ -234,17 +237,40 @@ namespace Log_Analyzer_App
                 var column = new DataGridTextColumn
                 {
                     Header = fieldName,
-                    // Give Timestamp/Level a fixed width and Message a star width for better default appearance
-                    // NOTE: Since the column names are dynamic, we use a simple heuristic for size,
-                    // or let the width auto-adjust.
-                    Width = (fieldName.Contains("Timestamp") || fieldName.Contains("Level") || fieldName.Length < 10 || fieldName.Contains("unnamed"))
-                        ? DataGridLength.Auto
-                        : new DataGridLength(1, DataGridLengthUnitType.Star),
                     IsReadOnly = true,
                     // Set the binding path to look into the LogEntry's Fields dictionary
                     // This uses the dynamic property lookup capability of WPF binding.
                     Binding = new Binding($"Fields[{fieldName}]")
                 };
+
+                // CRITICAL FIX: Use DataGridLength.Auto for all columns.
+                // The DataGrid will size the column to fit the widest content/header.
+                column.Width = DataGridLength.Auto;
+
+                // Set fixed minimum widths on predictable fields (Timestamp, Level) 
+                // and a very large minimum width on the last column (Message) to ensure 
+                // the DataGrid's total width exceeds the viewport, activating the scrollbar
+                // and preventing truncation.
+                if (fieldName.Contains("Timestamp", StringComparison.OrdinalIgnoreCase))
+                {
+                    column.MinWidth = 180;
+                }
+                else if (fieldName.Contains("Level", StringComparison.OrdinalIgnoreCase))
+                {
+                    column.MinWidth = 80;
+                }
+                else if (fieldName == lastFieldName)
+                {
+                    // Large MinWidth on the message column ensures that the content is 
+                    // shown without truncation, and the horizontal scrollbar appears 
+                    // if the window is small.
+                    column.MinWidth = 100;
+                }
+                // For other short dynamic fields, Auto should suffice, but we'll add a minimal MinWidth.
+                else
+                {
+                    column.MinWidth = 100;
+                }
 
                 // Add the column to the DataGrid
                 LogDataGrid.Columns.Add(column);

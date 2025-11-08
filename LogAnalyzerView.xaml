@@ -8,6 +8,8 @@
              mc:Ignorable="d" 
              d:DesignHeight="830" d:DesignWidth="1020">
 
+    <!-- The problematic UserControl.Resources block is removed entirely -->
+
     <Grid Margin="20">
         <Grid.ColumnDefinitions>
             <!-- Column for the DataGrid and main controls -->
@@ -67,6 +69,7 @@
                               HeadersVisibility="Column"
                               materialDesign:DataGridAssist.CellPadding="10"
                               materialDesign:DataGridAssist.ColumnHeaderPadding="10 10"
+                              HorizontalContentAlignment="Right" 
                               Margin="15 0 15 15" 
                               SelectionChanged="DataGrid_SelectionChanged">
                         <!-- 
