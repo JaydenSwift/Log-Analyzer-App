@@ -18,7 +18,39 @@ using System.Collections; // Needed for ICollectionView
 
 namespace Log_Analyzer_App
 {
-    // --- New Model for Storing Pattern and Dynamic Fields ---
+    // --- New Model for Dynamic Summary Stats ---
+    public class CountItem : INotifyPropertyChanged
+    {
+        private string _key;
+        public string Key
+        {
+            get => _key;
+            set { _key = value; OnPropertyChanged(nameof(Key)); }
+        }
+
+        private double _count;
+        public double Count
+        {
+            get => _count;
+            set { _count = value; OnPropertyChanged(nameof(Count)); }
+        }
+
+        private System.Windows.Media.Brush _color;
+        public System.Windows.Media.Brush Color
+        {
+            get => _color;
+            set { _color = value; OnPropertyChanged(nameof(Color)); }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+        protected virtual void OnPropertyChanged(string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+
+    // --- Log Pattern and Python Response Models (Unchanged) ---
     public class LogPatternDefinition
     {
         public string Pattern { get; set; }
@@ -27,20 +59,16 @@ namespace Log_Analyzer_App
         public List<string> FieldNames { get; set; } = new List<string>();
     }
 
-    // --- Model Class for Python JSON output (Parsing) ---
     public class PythonParserResponse
     {
         public bool Success { get; set; }
-        // Data is now a list of LogEntry objects (which contain a dynamic dictionary)
         public List<LogEntry> Data { get; set; }
         public string Error { get; set; }
     }
 
-    // --- NEW Model Class for Python JSON output (Pattern Suggestion) ---
     public class PythonSuggesterResponse
     {
         public bool Success { get; set; }
-        // Data is now a single LogPatternDefinition object
         public LogPatternDefinition Data { get; set; }
         public string Error { get; set; }
     }
@@ -56,7 +84,7 @@ namespace Log_Analyzer_App
         // Persistent file path
         public static string CurrentFilePath { get; set; } = "No log file loaded.";
         public static string SelectedFileForParsing { get; set; } = null;
-        public static string OriginalFilePath { get; set; } = null; // NEW: Store original path for parsing reuse
+        public static string OriginalFilePath { get; set; } = null; // Store original path for parsing reuse
 
         // NEW: Centralized pattern definition store
         public static LogPatternDefinition CurrentPatternDefinition { get; set; }
@@ -75,12 +103,20 @@ namespace Log_Analyzer_App
         // NEW: Stores the result of parsing the first line with the current pattern
         public static LogEntry ParsedFirstLine { get; set; } = new LogEntry();
 
-        // New persistent statistics properties for charts/summary
-        public static Dictionary<string, double> SummaryCounts { get; } = new Dictionary<string, double>
+        // MODIFIED: ObservableCollection for dynamic summary statistics binding
+        public static ObservableCollection<CountItem> SummaryCounts { get; } = new ObservableCollection<CountItem>();
+
+        // NEW: Static property to hold the *last used* field name for LogAnalyzerView
+        public static string LastStatsFieldName { get; set; } = "Level";
+
+        // Predefined color brushes for common levels
+        private static readonly Dictionary<string, System.Windows.Media.Brush> LevelColors = new Dictionary<string, System.Windows.Media.Brush>(StringComparer.OrdinalIgnoreCase)
         {
-            { "INFO", 0 },
-            { "WARN", 0 },
-            { "ERROR", 0 }
+            { "INFO", System.Windows.Media.Brushes.Blue },
+            { "WARN", System.Windows.Media.Brushes.Orange },
+            { "ERROR", System.Windows.Media.Brushes.Red },
+            { "DEBUG", System.Windows.Media.Brushes.Gray },
+            { "FATAL", System.Windows.Media.Brushes.DarkRed },
         };
 
         static LogDataStore()
@@ -90,38 +126,79 @@ namespace Log_Analyzer_App
         }
 
         /// <summary>
-        /// Calculates the count for each log level and stores it in SummaryCounts.
+        /// NEW: Calculates the count for all unique values in a specific field, returning a new collection.
+        /// This is used by the ChartViewer for independent analysis.
         /// </summary>
-        public static void CalculateSummaryCounts()
+        /// <param name="statsFieldName">The name of the column/field to group by.</param>
+        /// <returns>A new ObservableCollection<CountItem> representing the counts.</returns>
+        public static ObservableCollection<CountItem> GetDynamicSummaryCounts(string statsFieldName)
         {
-            // Reset counts
-            SummaryCounts["INFO"] = 0;
-            SummaryCounts["WARN"] = 0;
-            SummaryCounts["ERROR"] = 0;
+            var dynamicCounts = new ObservableCollection<CountItem>();
+            string fieldName = statsFieldName;
 
-            // Use the Level property of LogEntry, which is derived from the Fields dictionary
-            if (LogEntries.Any())
+            if (!LogEntries.Any() || string.IsNullOrEmpty(fieldName))
             {
-                // Get the name of the 'Level' field, which is expected to be the second field (index 1)
-                // We use the FieldOrder (which corresponds to the parsed column names)
-                string levelFieldName = LogDataStore.CurrentPatternDefinition.FieldNames.Count > 1
-                    ? LogDataStore.CurrentPatternDefinition.FieldNames.FirstOrDefault(name => name.IndexOf("level", StringComparison.OrdinalIgnoreCase) >= 0) // Try to find 'Level' explicitly
-                    ?? LogDataStore.CurrentPatternDefinition.FieldNames[1] // Fallback to second position
-                    : "Level"; // Fallback to hardcoded key 'Level'
+                return dynamicCounts;
+            }
 
-                // Group by Level and count
-                var counts = LogEntries
-                    // Safely try to get the Level field's value
-                    .Where(e => e.Fields.ContainsKey(levelFieldName))
-                    .Select(e => e.Fields[levelFieldName])
-                    .Where(levelValue => !string.IsNullOrEmpty(levelValue) && levelValue != "N/A")
-                    .GroupBy(levelValue => levelValue.ToUpper()) // Group by uppercase level for robustness
-                    .ToDictionary(g => g.Key, g => (double)g.Count());
+            // Group by the value of the identified statistics field
+            var counts = LogEntries
+                // Safely try to get the field's value
+                .Where(e => e.Fields.ContainsKey(fieldName))
+                .Select(e => e.Fields[fieldName].Trim())
+                .Where(fieldValue => !string.IsNullOrEmpty(fieldValue) && fieldValue != "N/A")
+                // Group by the value (Key is the actual value, e.g., "INFO" or "Thread-1")
+                .GroupBy(fieldValue => fieldValue)
+                .OrderByDescending(g => g.Count())
+                .ToDictionary(g => g.Key, g => (double)g.Count());
 
-                // Update SummaryCounts dictionary safely
-                if (counts.ContainsKey("INFO")) SummaryCounts["INFO"] = counts["INFO"];
-                if (counts.ContainsKey("WARN")) SummaryCounts["WARN"] = counts["WARN"];
-                if (counts.ContainsKey("ERROR")) SummaryCounts["ERROR"] = counts["ERROR"];
+            // Add grouped results to the ObservableCollection
+            foreach (var kvp in counts)
+            {
+                // Assign a color based on the key, falling back to black if not found.
+                System.Windows.Media.Brush color = LevelColors.ContainsKey(kvp.Key)
+                    ? LevelColors[kvp.Key]
+                    : System.Windows.Media.Brushes.Black;
+
+                dynamicCounts.Add(new CountItem
+                {
+                    Key = kvp.Key,
+                    Count = kvp.Value,
+                    Color = color
+                });
+            }
+
+            return dynamicCounts;
+        }
+
+        /// <summary>
+        /// MODIFIED: Calculates the count for all unique values in the designated field 
+        /// and updates the static SummaryCounts collection for the Log Analyzer tab.
+        /// </summary>
+        /// <param name="statsFieldName">The name of the column/field to group by (defaulting to LastStatsFieldName).</param>
+        public static void CalculateSummaryCounts(string statsFieldName = null)
+        {
+            // If the field name is not passed, use the last remembered field name.
+            string fieldName = statsFieldName ?? LastStatsFieldName;
+
+            // Clear the existing observable collection
+            SummaryCounts.Clear();
+
+            if (!LogEntries.Any() || string.IsNullOrEmpty(fieldName))
+            {
+                return;
+            }
+
+            // Update the last used field name
+            LastStatsFieldName = fieldName;
+
+            // Get dynamic counts for the determined field
+            var newCounts = GetDynamicSummaryCounts(fieldName);
+
+            // Populate the static collection
+            foreach (var item in newCounts)
+            {
+                SummaryCounts.Add(item);
             }
         }
     }
@@ -149,7 +226,7 @@ namespace Log_Analyzer_App
     /// <summary>
     /// Interaction logic for LogAnalyzerView.xaml
     /// </summary>
-    public partial class LogAnalyzerView : UserControl
+    public partial class LogAnalyzerView : UserControl, INotifyPropertyChanged
     {
         private ObservableCollection<LogEntry> _logEntries = LogDataStore.LogEntries;
 
@@ -213,6 +290,35 @@ namespace Log_Analyzer_App
         public LogPreviewModel PreviewModel { get; set; } = new LogPreviewModel();
 
 
+        // NEW: Property to hold the dynamic Summary Counts for binding
+        public ObservableCollection<CountItem> SummaryCounts { get; set; } = LogDataStore.SummaryCounts;
+
+        // NEW: Observable collection to populate the ComboBox with available field names
+        private ObservableCollection<string> _availableStatsFields = new ObservableCollection<string>();
+        public ObservableCollection<string> AvailableStatsFields
+        {
+            get => _availableStatsFields;
+            set { _availableStatsFields = value; OnPropertyChanged(nameof(AvailableStatsFields)); }
+        }
+
+        // NEW: Property to store the currently selected stats field (for TwoWay binding to ComboBox)
+        private string _selectedStatsField;
+        public string SelectedStatsField
+        {
+            get => _selectedStatsField;
+            set
+            {
+                if (_selectedStatsField != value)
+                {
+                    _selectedStatsField = value;
+                    LogDataStore.CalculateSummaryCounts(value); // Trigger calculation with the new field
+                    OnPropertyChanged(nameof(SummaryCounts)); // Force UI refresh on the ItemsControl
+                    OnPropertyChanged(nameof(SelectedStatsField));
+                }
+            }
+        }
+
+
         public LogAnalyzerView()
         {
             InitializeComponent();
@@ -240,10 +346,40 @@ namespace Log_Analyzer_App
                 SetupDynamicColumns();
             }
 
+            // NEW: Initialize the field lists on startup
+            UpdateAvailableStatsFields(LogDataStore.CurrentPatternDefinition.FieldNames);
+
             // Update UI with persistent data on initialization
             RefreshView();
 
             ShowParserStatus(false);
+        }
+
+        /// <summary>
+        /// NEW: Updates the ComboBox items with the current field names and selects the last used field.
+        /// </summary>
+        private void UpdateAvailableStatsFields(List<string> fieldNames)
+        {
+            AvailableStatsFields.Clear();
+            foreach (var fieldName in fieldNames)
+            {
+                AvailableStatsFields.Add(fieldName);
+            }
+            // If the last used field name is still available, select it, otherwise, default to the first field.
+            if (fieldNames.Contains(LogDataStore.LastStatsFieldName))
+            {
+                SelectedStatsField = LogDataStore.LastStatsFieldName;
+            }
+            else if (fieldNames.Any())
+            {
+                // Default to the field named 'Level' if present, or the first field.
+                string defaultField = fieldNames.FirstOrDefault(name => name.Equals("Level", StringComparison.OrdinalIgnoreCase));
+                SelectedStatsField = defaultField ?? fieldNames[0];
+            }
+            else
+            {
+                SelectedStatsField = null; // No fields available
+            }
         }
 
         /// <summary>
@@ -474,16 +610,8 @@ namespace Log_Analyzer_App
             // FIX: Removed duplicate CurrentPatternDefinition access
             PatternDescriptionTextBlock.Text = LogDataStore.CurrentPatternDefinition.Description;
 
-            if (_logEntries.Any())
-            {
-                // File is loaded, update status and counts
-                UpdateSummaryStatistics();
-            }
-            else
-            {
-                // No file loaded
-                UpdateSummaryStatistics(true); // Clear counts
-            }
+            // Update the dynamic summary statistics display
+            UpdateSummaryStatistics();
 
             // Crucial: Set the state of the parsing panel based on whether a file is selected for parsing
             ShowParserStatus(false);
@@ -560,6 +688,9 @@ namespace Log_Analyzer_App
 
             try
             {
+                // NOTE: We rely on the C# Regex object here which requires the user to use regex syntax, 
+                // but the final parsing in the Python script uses the 'parse' library. 
+                // This is a known limitation when using the regex builder.
                 var regex = new Regex(pattern);
                 Match match = regex.Match(LogDataStore.FirstLogLine);
 
@@ -702,6 +833,9 @@ namespace Log_Analyzer_App
 
                 // NEW: Initialize column controls *after* updating the final field names
                 InitializeColumnControls(LogDataStore.CurrentPatternDefinition.FieldNames);
+                // NEW: Update available stats fields after column list is finalized
+                UpdateAvailableStatsFields(LogDataStore.CurrentPatternDefinition.FieldNames);
+
 
                 // --- NEW COLUMN LOGIC: MUST BE CALLED BEFORE ADDING ENTRIES ---
                 SetupDynamicColumns();
@@ -715,7 +849,8 @@ namespace Log_Analyzer_App
                 }
 
                 // 4. Update persistent data and calculate counts
-                LogDataStore.CalculateSummaryCounts();
+                // Calculate SummaryCounts using the currently selected field in this view
+                LogDataStore.CalculateSummaryCounts(SelectedStatsField);
                 LogDataStore.CurrentFilePath = $"File Loaded: {Path.GetFileName(filePath)} ({_logEntries.Count} lines) using pattern: {definition.Description}";
 
                 // 5. Final UI update
@@ -953,21 +1088,22 @@ namespace Log_Analyzer_App
         }
 
         /// <summary>
-        /// Calculates and displays the count for each log level in the Summary Statistics section.
+        /// MODIFIED: Updates the summary statistics display using the dynamic CountItem collection.
+        /// (This method now just forces the UI to re-render the bound data, as the calculation 
+        /// is handled in LogDataStore.CalculateSummaryCounts()).
         /// </summary>
         private void UpdateSummaryStatistics(bool clear = false)
         {
-            if (clear || !LogDataStore.LogEntries.Any())
-            {
-                InfoCountText.Text = "0";
-                WarnCountText.Text = "0";
-                ErrorCountText.Text = "0";
-                return;
-            }
+            // The SummaryCounts collection is bound directly in XAML.
+            // No action needed here other than relying on binding.
+        }
 
-            InfoCountText.Text = LogDataStore.SummaryCounts["INFO"].ToString("N0");
-            WarnCountText.Text = LogDataStore.SummaryCounts["WARN"].ToString("N0");
-            ErrorCountText.Text = LogDataStore.SummaryCounts["ERROR"].ToString("N0");
+        // --- INotifyPropertyChanged Implementation ---
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void OnPropertyChanged(string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
     }
 }

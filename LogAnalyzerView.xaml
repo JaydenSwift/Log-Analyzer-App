@@ -175,41 +175,7 @@
                     </StackPanel>
                 </materialDesign:Card>
 
-                <!-- Summary Stats Card -->
-                <materialDesign:Card UniformCornerRadius="10" Margin="0 0 0 15" Padding="15">
-                    <StackPanel>
-                        <TextBlock Text="Summary Statistics" FontWeight="Bold" Margin="0 0 0 10"/>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-
-                            <!-- INFO Events -->
-                            <materialDesign:PackIcon Kind="Information" Grid.Row="0" Grid.Column="0" Margin="0 6 10 6" Foreground="Blue" VerticalAlignment="Center"/>
-                            <TextBlock Text="INFO Events:" Grid.Row="0" Grid.Column="1" Margin="0 6 0 6" VerticalAlignment="Center"/>
-                            <TextBlock Text="8,900" Grid.Row="0" Grid.Column="2" x:Name="InfoCountText" HorizontalAlignment="Right" FontWeight="SemiBold" Margin="8" VerticalAlignment="Center"/>
-
-                            <!-- WARN Events -->
-                            <materialDesign:PackIcon Kind="Alert" Grid.Row="1" Grid.Column="0" Margin="0 6 10 6" Foreground="Orange" VerticalAlignment="Center"/>
-                            <TextBlock Text="WARN Events:" Grid.Row="1" Grid.Column="1" Margin="0 6 0 6" VerticalAlignment="Center"/>
-                            <TextBlock Text="580" Grid.Row="1" Grid.Column="2" x:Name="WarnCountText" HorizontalAlignment="Right" FontWeight="SemiBold" Margin="8" VerticalAlignment="Center"/>
-
-                            <!-- ERROR Events -->
-                            <materialDesign:PackIcon Kind="AlertCircle" Grid.Row="2" Grid.Column="0" Margin="0 6 10 6" Foreground="Red" VerticalAlignment="Center"/>
-                            <TextBlock Text="ERROR Events:" Grid.Row="2" Grid.Column="1" Margin="0 6 0 6" VerticalAlignment="Center"/>
-                            <TextBlock Text="20" Grid.Row="2" Grid.Column="2" x:Name="ErrorCountText" HorizontalAlignment="Right" FontWeight="SemiBold" Margin="8" VerticalAlignment="Center"/>
-                        </Grid>
-                    </StackPanel>
-                </materialDesign:Card>
-
-                <!-- Filters Card (Updated) -->
+                <!-- Filters Card (MOVED UP) -->
                 <materialDesign:Card UniformCornerRadius="10" Margin="0 0 0 15" Padding="15">
                     <StackPanel>
                         <TextBlock Text="Filters" FontWeight="Bold" Margin="0 0 0 10"/>
@@ -254,6 +220,50 @@
                                  TextChanged="SearchTextBox_TextChanged"/>
                     </StackPanel>
                 </materialDesign:Card>
+
+                <!-- Summary Stats Card (DROPDOWN RESTORED) -->
+                <materialDesign:Card UniformCornerRadius="10" Margin="0 0 0 15" Padding="15">
+                    <StackPanel>
+                        <TextBlock Text="Summary Statistics" FontWeight="Bold" Margin="0 0 0 10"/>
+
+                        <!-- RESTORED: Field Selector Dropdown -->
+                        <ComboBox materialDesign:HintAssist.Hint="Group by Column"
+                                  ItemsSource="{Binding AvailableStatsFields}"
+                                  SelectedItem="{Binding SelectedStatsField, Mode=TwoWay}"
+                                  Margin="0 0 0 10"
+                                  />
+
+                        <!-- Dynamic Count ItemsControl -->
+                        <ItemsControl ItemsSource="{Binding SummaryCounts}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0 4 0 4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Icon (using the dynamic Color property) -->
+                                        <materialDesign:PackIcon Kind="CircleSmall" Grid.Column="0" Margin="0 0 10 0" 
+                                                                 Foreground="{Binding Color}" VerticalAlignment="Center" Width="20" Height="20"/>
+
+                                        <!-- Key (Level Name) -->
+                                        <TextBlock Text="{Binding Key, StringFormat='{}{0} Events:'}" Grid.Column="1" 
+                                                   Margin="0 0 0 0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+
+                                        <!-- Count (Formatted) -->
+                                        <TextBlock Text="{Binding Count, StringFormat='N0'}" Grid.Column="2" 
+                                                   HorizontalAlignment="Right" FontWeight="Bold" VerticalAlignment="Center"
+                                                   Foreground="{Binding Color}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                    </StackPanel>
+                </materialDesign:Card>
+
             </StackPanel>
         </ScrollViewer>
     </Grid>

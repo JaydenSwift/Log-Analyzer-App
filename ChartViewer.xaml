@@ -10,7 +10,17 @@
     <Grid Background="{DynamicResource MaterialDesignPaper}" Margin="20">
         <StackPanel Margin="20">
             <TextBlock Text="Log Event Distribution Analysis" FontSize="32" FontWeight="Bold" Margin="0 0 0 10" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryHueMidBrush}"/>
-            <TextBlock Text="Comparing raw counts (Bar) against proportional breakdown (Pie)." FontSize="16" HorizontalAlignment="Center" Opacity="0.7" Margin="0 0 0 20"/>
+            <TextBlock Text="Comparing raw counts (Bar) against proportional breakdown (Pie)." FontSize="16" HorizontalAlignment="Center" Opacity="0.7" Margin="0 0 0 10"/>
+
+            <!-- Chart Grouping Dropdown -->
+            <ComboBox materialDesign:HintAssist.Hint="Group Chart Data by Column"
+                      ItemsSource="{Binding AvailableStatsFields}"
+                      SelectedItem="{Binding SelectedStatsField, Mode=TwoWay}"
+                      HorizontalAlignment="Center"
+                      Width="300"
+                      Margin="0 0 0 20"
+                      />
+            <!-- END Chart Grouping Dropdown -->
 
             <materialDesign:Card UniformCornerRadius="10" Padding="15" Height="650">
                 <Grid>
