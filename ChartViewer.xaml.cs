@@ -1,4 +1,7 @@
-﻿using System;
+﻿using LiveCharts;
+using LiveCharts.Definitions.Series;
+using LiveCharts.Wpf;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel; // Added for ObservableCollection
 using System.ComponentModel;
@@ -6,11 +9,44 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using LiveCharts;
-using LiveCharts.Wpf;
 
 namespace Log_Analyzer_App
 {
+    // MOVED: Model for dynamic legend items - Now defined outside the ChartViewer class
+    public class ChartLegendItem : INotifyPropertyChanged
+    {
+        private string _key;
+        public string Key
+        {
+            get => _key;
+            set { _key = value; OnPropertyChanged(nameof(Key)); }
+        }
+
+        private System.Windows.Media.Brush _color;
+        public System.Windows.Media.Brush Color
+        {
+            get => _color;
+            set { _color = value; OnPropertyChanged(nameof(Color)); }
+        }
+
+        private bool _isVisible = true;
+        public bool IsVisible
+        {
+            get => _isVisible;
+            set { _isVisible = value; OnPropertyChanged(nameof(IsVisible)); }
+        }
+
+        // Reference to the actual LiveCharts series object
+        public ISeriesView LiveChartSeries { get; set; }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+        protected virtual void OnPropertyChanged(string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+
     /// <summary>
     /// Interaction logic for ChartViewer.xaml
     /// </summary>
@@ -34,6 +70,7 @@ namespace Log_Analyzer_App
             set { _pieSeriesCollection = value; OnPropertyChanged(nameof(PieSeriesCollection)); }
         }
 
+        // Labels property is kept but will no longer be used for the X-Axis in the new ColumnSeries structure
         private string[] _labels;
         public string[] Labels
         {
@@ -45,6 +82,14 @@ namespace Log_Analyzer_App
         public Func<double, string> Formatter { get; set; }
 
         // --- Chart Grouping & State Variables ---
+
+        // NEW: Collection to hold items for the Custom Legend (Bar Chart)
+        private ObservableCollection<ChartLegendItem> _barChartLegendItems = new ObservableCollection<ChartLegendItem>();
+        public ObservableCollection<ChartLegendItem> BarChartLegendItems
+        {
+            get => _barChartLegendItems;
+            set { _barChartLegendItems = value; OnPropertyChanged(nameof(BarChartLegendItems)); }
+        }
 
         // NEW: Observable collection to populate the ComboBox with available field names
         private ObservableCollection<string> _availableStatsFields = new ObservableCollection<string>();
@@ -71,24 +116,6 @@ namespace Log_Analyzer_App
             }
         }
 
-
-        // UI State
-        // NOTE: These fixed booleans are only used to filter the *Bar Chart* for a fixed subset of levels.
-        private bool _isInfoVisible = true;
-        private bool _isWarnVisible = true;
-        private bool _isErrorVisible = true;
-
-        // NEW: Centralized color mapping for dynamic levels
-        private readonly Dictionary<string, SolidColorBrush> LevelColors = new Dictionary<string, SolidColorBrush>(StringComparer.OrdinalIgnoreCase)
-        {
-            // Consistent colors with LogAnalyzerView.xaml.cs
-            { "INFO", (SolidColorBrush)new BrushConverter().ConvertFromString("#4CAF50") }, // Green
-            { "WARN", (SolidColorBrush)new BrushConverter().ConvertFromString("#FFC107") }, // Amber
-            { "ERROR", (SolidColorBrush)new BrushConverter().ConvertFromString("#F44336") },  // Red
-            { "DEBUG", (SolidColorBrush)new BrushConverter().ConvertFromString("#9E9E9E") }, // Gray
-            { "FATAL", (SolidColorBrush)new BrushConverter().ConvertFromString("#B71C1C") }  // Dark Red
-        };
-
         // --- Constructor ---
         public ChartViewer()
         {
@@ -97,9 +124,6 @@ namespace Log_Analyzer_App
 
             // Load all necessary data when the viewer is first loaded or navigated to
             this.Loaded += ChartViewer_Loaded;
-
-            // NOTE: The explicit calls to 'new SeriesCollection()' are removed from InitializeChartData 
-            // because they are now initialized in the property declarations above.
         }
 
         /// <summary>
@@ -165,13 +189,14 @@ namespace Log_Analyzer_App
                 SeriesCollection.Clear();
                 PieSeriesCollection.Clear();
                 Labels = new string[0];
+                BarChartLegendItems.Clear();
                 return;
             }
 
             // Fetch dynamic counts based on the currently selected field using the LogDataStore method
             ObservableCollection<CountItem> dynamicLogData = LogDataStore.GetDynamicSummaryCounts(SelectedStatsField);
 
-            // 1. Setup Labels (Must be before SeriesCollection)
+            // 1. Labels property is now redundant for X-Axis but kept for compatibility/debug
             Labels = dynamicLogData.Select(c => c.Key).ToArray();
 
             // 2. Update Charts
@@ -182,74 +207,52 @@ namespace Log_Analyzer_App
         // --- Core Update Methods ---
 
         /// <summary>
-        /// MODIFIED: Updates the Column/Bar Chart based on current filters and dynamic data.
+        /// MODIFIED: Updates the Column/Bar Chart.
+        /// CRITICAL FIX: Creates a separate ColumnSeries for *every* data point (bar)
+        /// so that each bar can be assigned its unique, dynamic color, and updates the custom legend items.
         /// </summary>
         /// <param name="logData">The source data collection (ObservableCollection<CountItem>).</param>
         private void UpdateBarChart(ObservableCollection<CountItem> logData)
         {
             SeriesCollection.Clear();
+            BarChartLegendItems.Clear(); // Clear and rebuild the custom legend
 
-            // 1. Prepare data for the Bar Chart
-            var filteredLevels = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            if (!logData.Any()) return;
 
-            // Determine if the currently selected field is a 'Level'-like field
-            bool isLevelField = SelectedStatsField.Equals("Level", StringComparison.OrdinalIgnoreCase);
-
-            if (isLevelField)
+            // Iterate through the CountItems and create a distinct ColumnSeries for each item.
+            foreach (var item in logData)
             {
-                // If it's a level-like field, apply fixed INFO/WARN/ERROR filtering from checkboxes
-                foreach (var item in logData)
+                var series = new ColumnSeries
                 {
-                    bool isKnownLevel = LevelColors.ContainsKey(item.Key);
-
-                    if (isKnownLevel)
-                    {
-                        if (item.Key.Equals("INFO", StringComparison.OrdinalIgnoreCase) && _isInfoVisible) filteredLevels.Add(item.Key, item.Count);
-                        else if (item.Key.Equals("WARN", StringComparison.OrdinalIgnoreCase) && _isWarnVisible) filteredLevels.Add(item.Key, item.Count);
-                        else if (item.Key.Equals("ERROR", StringComparison.OrdinalIgnoreCase) && _isErrorVisible) filteredLevels.Add(item.Key, item.Count);
-                        // All other known levels (DEBUG, FATAL) are hidden by default fixed filters
-                    }
-                    else
-                    {
-                        // Include unknown fields
-                        filteredLevels.Add(item.Key, item.Count);
-                    }
-                }
-            }
-            else
-            {
-                // If grouping by a custom field (like 'Thread' or 'Resource'), display all entries
-                foreach (var item in logData)
-                {
-                    filteredLevels.Add(item.Key, item.Count);
-                }
-            }
-
-            // Re-update Labels for the X-axis to reflect only the displayed levels
-            Labels = filteredLevels.Keys.ToArray();
-            var chartValues = new ChartValues<double>(filteredLevels.Values);
-
-
-            // 2. Add the series
-            if (chartValues.Any(v => v > 0))
-            {
-                SeriesCollection.Add(new ColumnSeries
-                {
-                    // Use the Selected Field as the title
-                    Title = SelectedStatsField,
-                    Values = chartValues,
-                    // Use a dynamic color that works well for bars - picking a consistent theme color
-                    Fill = (SolidColorBrush)new BrushConverter().ConvertFromString("#FF007ACC"),
+                    // Use the key as the series Title, which LiveCharts will use for the X-axis label/legend.
+                    Title = item.Key,
+                    // Values is a collection with only one element: the count for this key.
+                    Values = new ChartValues<double> { item.Count },
+                    // Use the color assigned in LogDataStore for the bar's Fill.
+                    Fill = item.Color as SolidColorBrush,
+                    // Optional: Show data labels on the bar
                     DataLabels = true,
                     LabelPoint = point => point.Y.ToString("N0")
+                };
+
+                SeriesCollection.Add(series);
+
+                // NEW: Add item to the custom legend collection
+                BarChartLegendItems.Add(new ChartLegendItem
+                {
+                    Key = item.Key,
+                    Color = item.Color,
+                    IsVisible = true, // Start visible
+                    LiveChartSeries = series // Store reference to the series object
                 });
             }
         }
 
         /// <summary>
         /// MODIFIED: Updates the Pie Chart based on the current data, label mode, and slice threshold.
+        /// It now uses the dynamic color brush assigned in LogDataStore for each CountItem.
         /// </summary>
-        /// <param name="logData">The source data collection (ObservableCollection<CountItem>).</param>
+        /// <param name="logData">Ghe source data collection (ObservableCollection<CountItem>).</param>
         /// <param name="minPercentageThreshold">The minimum percentage for a slice to be displayed.</param>
         private void UpdatePieChart(ObservableCollection<CountItem> logData, double minPercentageThreshold)
         {
@@ -278,17 +281,11 @@ namespace Log_Analyzer_App
                 // Apply minimum percentage threshold filter
                 if (percentage >= minPercentageThreshold)
                 {
-                    // Use the color defined in the LevelColors map, falling back if key is dynamic
-                    SolidColorBrush sliceColor;
-                    if (LevelColors.TryGetValue(countItem.Key, out var predefinedBrush))
-                    {
-                        sliceColor = predefinedBrush;
-                    }
-                    else
-                    {
-                        // Fallback to a consistent gray for truly unknown/dynamic levels
-                        sliceColor = (SolidColorBrush)new BrushConverter().ConvertFromString("#9E9E9E");
-                    }
+                    // CRITICAL FIX: Use the color property directly from CountItem.
+                    SolidColorBrush sliceColor = countItem.Color as SolidColorBrush;
+
+                    // Safety check, although it should always be a SolidColorBrush now
+                    if (sliceColor == null) continue;
 
                     PieSeriesCollection.Add(new PieSeries
                     {
@@ -302,23 +299,26 @@ namespace Log_Analyzer_App
             }
         }
 
-        // --- Event Handlers ---
-
         /// <summary>
-        /// Handles CheckBox changes for the Bar Chart filters.
+        /// NEW: Toggles the visibility of the linked LiveCharts Series object when a legend item is clicked.
         /// </summary>
-        private void LogFilter_Changed(object sender, RoutedEventArgs e)
+        private void ToggleSeriesVisibility(object sender, RoutedEventArgs e)
         {
-            // CRITICAL FIX: Prevent execution if the control is not fully loaded.
-            if (!IsLoaded) return;
+            if (sender is Button button && button.DataContext is ChartLegendItem legendItem)
+            {
+                // Toggle the state in the data model
+                legendItem.IsVisible = !legendItem.IsVisible;
 
-            _isInfoVisible = InfoCheckBox.IsChecked ?? false;
-            _isWarnVisible = WarnCheckBox.IsChecked ?? false;
-            _isErrorVisible = ErrorCheckBox.IsChecked ?? false;
-
-            // Re-run the update to apply the filters to the current grouping
-            UpdateAllCharts();
+                // Apply the visibility change directly to the linked LiveChartSeries
+                if (legendItem.LiveChartSeries is Series series)
+                {
+                    series.Visibility = legendItem.IsVisible ? Visibility.Visible : Visibility.Hidden;
+                }
+            }
         }
+
+
+        // --- Event Handlers ---
 
         /// <summary>
         /// Handles RadioButton changes for the Pie Chart label display.

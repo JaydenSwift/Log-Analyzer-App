@@ -5,12 +5,36 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
              xmlns:lvc="clr-namespace:LiveCharts.Wpf;assembly=LiveCharts.Wpf"
+             xmlns:local="clr-namespace:Log_Analyzer_App"
              mc:Ignorable="d" 
              d:DesignHeight="830" d:DesignWidth="1020">
+    <UserControl.Resources>
+        <!-- Style to make the legend item look like a togglable button -->
+        <Style x:Key="LegendToggleButtonStyle" TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
+            <Setter Property="Margin" Value="5 0"/>
+            <Setter Property="Padding" Value="5 3"/>
+            <Setter Property="Height" Value="Auto"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="materialDesign:ButtonAssist.CornerRadius" Value="5"/>
+            <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}"/>
+            <Setter Property="Opacity" Value="1"/>
+            <Style.Triggers>
+                <!-- When the item is not visible (IsVisible=False), dim it visually -->
+                <DataTrigger Binding="{Binding IsVisible}" Value="False">
+                    <Setter Property="Opacity" Value="0.4"/>
+                    <Setter Property="ToolTip" Value="Click to show"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsVisible}" Value="True">
+                    <Setter Property="ToolTip" Value="Click to hide"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
     <Grid Background="{DynamicResource MaterialDesignPaper}" Margin="20">
         <StackPanel Margin="20">
             <TextBlock Text="Log Event Distribution Analysis" FontSize="32" FontWeight="Bold" Margin="0 0 0 10" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryHueMidBrush}"/>
-            <TextBlock Text="Comparing raw counts (Bar) against proportional breakdown (Pie)." FontSize="16" HorizontalAlignment="Center" Opacity="0.7" Margin="0 0 0 10"/>
+            
 
             <!-- Chart Grouping Dropdown -->
             <ComboBox materialDesign:HintAssist.Hint="Group Chart Data by Column"
@@ -29,24 +53,18 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <!-- Left Column: Bar Chart (Raw Counts) & Options -->
+                    <!-- Left Column: Bar Chart (Raw Counts) -->
                     <Grid Grid.Column="0" Margin="0 0 10 0">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
                         <!-- Bar Chart -->
-                        <StackPanel Grid.Row="0">
-                            <TextBlock Text="Event Count Breakdown" FontWeight="SemiBold" Margin="0 0 0 10" HorizontalAlignment="Center" FontSize="18"/>
-                            <lvc:CartesianChart Series="{Binding SeriesCollection}" 
-                                                LegendLocation="Bottom" 
+                        <StackPanel>
+                            <TextBlock Text="Event Count Breakdown (Raw Counts)" FontWeight="SemiBold" Margin="0 0 0 10" HorizontalAlignment="Center" FontSize="18"/>
+                            <lvc:CartesianChart Series="{Binding SeriesCollection}" LegendLocation="None" 
                                                 Hoverable="True"
-                                                Height="400">
-                                <!-- Adjusted from 450 to 400 to make X-axis labels visible -->
+                                                Height="500">
+                                <!-- Height reduced slightly to make room for the custom legend -->
 
                                 <lvc:CartesianChart.AxisX>
-                                    <lvc:Axis Labels="{Binding Labels}"/>
+                                    <lvc:Axis Title="{Binding SelectedStatsField}" ShowLabels="True"/>
                                 </lvc:CartesianChart.AxisX>
 
                                 <lvc:CartesianChart.AxisY>
@@ -54,30 +72,41 @@
                                 </lvc:CartesianChart.AxisY>
 
                             </lvc:CartesianChart>
-                        </StackPanel>
 
-                        <!-- Options Box for Bar Chart -->
-                        <materialDesign:Card Grid.Row="1" UniformCornerRadius="8" Padding="15" Margin="0 15 0 0" Background="{DynamicResource MaterialDesignLightBackground}">
-                            <StackPanel>
-                                <TextBlock Text="Bar Chart Options (Data &amp; Filters)" FontWeight="Bold" Margin="0 0 0 10"/>
-
-                                <!-- Data Source Filter - Note: Functional implementation for ComboBox is complex and deferred -->
-                                <ComboBox materialDesign:HintAssist.Hint="Chart Data Source" Margin="0 0 0 10" SelectedIndex="0">
-                                    <ComboBoxItem Content="Full Log File Data"/>
-                                    <ComboBoxItem Content="Current Filtered Grid Data"/>
-                                    <ComboBoxItem Content="Last 24 Hours (If Time Parsing Available)"/>
-                                </ComboBox>
-
-                                <!-- Log Level Checkboxes -->
-                                <TextBlock Text="Visible Log Levels:" Opacity="0.8" Margin="0 5 0 5"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <CheckBox x:Name="InfoCheckBox" Content="INFO" IsChecked="True" Margin="0 0 15 0" Foreground="{StaticResource MaterialDesignBody}" Checked="LogFilter_Changed" Unchecked="LogFilter_Changed"/>
-                                    <CheckBox x:Name="WarnCheckBox" Content="WARN" IsChecked="True" Margin="0 0 15 0" Foreground="{StaticResource MaterialDesignBody}" Checked="LogFilter_Changed" Unchecked="LogFilter_Changed"/>
-                                    <CheckBox x:Name="ErrorCheckBox" Content="ERROR" IsChecked="True" Foreground="{StaticResource MaterialDesignBody}" Checked="LogFilter_Changed" Unchecked="LogFilter_Changed"/>
+                            <!-- NEW: Custom Toggleable Legend -->
+                            <materialDesign:Card UniformCornerRadius="8" Padding="10" Margin="0 10 0 0" Background="{DynamicResource MaterialDesignLightBackground}">
+                                <StackPanel>
+                                    <TextBlock Text="Bar Visibility" FontWeight="SemiBold" Opacity="0.8" Margin="0 0 0 5"/>
+                                    <ScrollViewer VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto" MaxHeight="50">
+                                        <ItemsControl ItemsSource="{Binding BarChartLegendItems}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel HorizontalAlignment="Center"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type local:ChartLegendItem}">
+                                                    <!-- Clickable Button for each Legend Item -->
+                                                    <Button CommandParameter="{Binding}" 
+                                                            Style="{StaticResource LegendToggleButtonStyle}" 
+                                                            Click="ToggleSeriesVisibility">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <!-- Colored Circle Icon -->
+                                                            <materialDesign:PackIcon Kind="CircleSmall" Width="12" Height="12" Margin="0 0 5 0" 
+                                                                                     Foreground="{Binding Color}" VerticalAlignment="Center"/>
+                                                            <!-- Key/Title -->
+                                                            <TextBlock Text="{Binding Key}" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                                        </StackPanel>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
                                 </StackPanel>
+                            </materialDesign:Card>
+                            <!-- END NEW: Custom Toggleable Legend -->
 
-                            </StackPanel>
-                        </materialDesign:Card>
+                        </StackPanel>
                     </Grid>
 
                     <!-- Right Column: Pie Chart (Proportional Breakdown) & Options -->
@@ -95,14 +124,14 @@
                                           Hoverable="True"
                                           InnerRadius="50"
                                           Height="400">
-                                <!-- Adjusted from 450 to 400 -->
+                                <!-- Height increased to match the Bar Chart -->
                             </lvc:PieChart>
                         </StackPanel>
 
                         <!-- Options Box for Pie Chart -->
                         <materialDesign:Card Grid.Row="1" UniformCornerRadius="8" Padding="15" Margin="0 15 0 0" Background="{DynamicResource MaterialDesignLightBackground}">
                             <StackPanel>
-                                <TextBlock Text="Pie Chart Options (Display)" FontWeight="Bold" Margin="0 0 0 10"/>
+                                <TextBlock Text="Pie Chart Options" FontWeight="Bold" Margin="0 0 0 10"/>
 
                                 <!-- Label Display Style -->
                                 <TextBlock Text="Slice Label Content:" Opacity="0.8" Margin="0 0 0 5"/>

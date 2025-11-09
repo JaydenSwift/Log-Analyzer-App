@@ -13,8 +13,8 @@ using System.Threading.Tasks;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.ComponentModel;
-using System.Windows.Data;
 using System.Collections; // Needed for ICollectionView
+using System.Windows.Media; // Explicitly imported for Brush, Color, SolidColorBrush
 
 namespace Log_Analyzer_App
 {
@@ -119,11 +119,72 @@ namespace Log_Analyzer_App
             { "FATAL", System.Windows.Media.Brushes.DarkRed },
         };
 
+        // NEW: Cache for dynamically generated colors for non-standard keys (ensures consistency)
+        private static readonly Dictionary<string, System.Windows.Media.Brush> DynamicKeyColors = new Dictionary<string, System.Windows.Media.Brush>(StringComparer.OrdinalIgnoreCase);
+
+        // Static Random instance for color generation
+        private static readonly Random Rnd = new Random();
+
         static LogDataStore()
         {
             // Initialize the current pattern with the default one
             CurrentPatternDefinition = DefaultPatternDefinition;
         }
+
+        /// <summary>
+        /// NEW: Generates a random SolidColorBrush with a relatively high saturation to be visible on white background.
+        /// Uses HSL color space for better color distribution and contrast.
+        /// </summary>
+        private static System.Windows.Media.SolidColorBrush GetRandomBrush()
+        {
+            // Generate random HSL colors and convert to RGB for better distribution of vivid colors
+            // Use Saturation > 0.7 and Lightness around 0.5 to ensure it's not too pale or too dark.
+            double hue = Rnd.NextDouble() * 360;
+            double saturation = Rnd.NextDouble() * 0.3 + 0.7; // 0.7 to 1.0 (high saturation)
+            double lightness = Rnd.NextDouble() * 0.2 + 0.4;  // 0.4 to 0.6 (medium lightness)
+
+            // HSL to RGB conversion
+            var color = ColorFromHsl(hue, saturation, lightness);
+
+            return new System.Windows.Media.SolidColorBrush(color);
+        }
+
+        /// <summary>
+        /// Helper function to convert HSL (0-360, 0-1, 0-1) to System.Windows.Media.Color
+        /// </summary>
+        private static System.Windows.Media.Color ColorFromHsl(double h, double s, double l)
+        {
+            double r, g, b;
+            if (s == 0)
+            {
+                r = g = b = l; // achromatic
+            }
+            else
+            {
+                double q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                double p = 2 * l - q;
+                r = HueToRgb(p, q, h + 120);
+                g = HueToRgb(p, q, h);
+                b = HueToRgb(p, q, h - 120);
+            }
+
+            return System.Windows.Media.Color.FromRgb(
+                (byte)(r * 255),
+                (byte)(g * 255),
+                (byte)(b * 255)
+            );
+        }
+
+        private static double HueToRgb(double p, double q, double t)
+        {
+            if (t < 0) t += 360;
+            if (t > 360) t -= 360;
+            if (t < 60) return p + (q - p) * t / 60;
+            if (t < 180) return q;
+            if (t < 240) return p + (q - p) * (240 - t) / 60;
+            return p;
+        }
+
 
         /// <summary>
         /// NEW: Calculates the count for all unique values in a specific field, returning a new collection.
@@ -155,10 +216,24 @@ namespace Log_Analyzer_App
             // Add grouped results to the ObservableCollection
             foreach (var kvp in counts)
             {
-                // Assign a color based on the key, falling back to black if not found.
-                System.Windows.Media.Brush color = LevelColors.ContainsKey(kvp.Key)
-                    ? LevelColors[kvp.Key]
-                    : System.Windows.Media.Brushes.Black;
+                System.Windows.Media.Brush color;
+
+                // 1. Check Predefined Colors (for common levels like INFO/ERROR)
+                if (LevelColors.ContainsKey(kvp.Key))
+                {
+                    color = LevelColors[kvp.Key];
+                }
+                // 2. Check Dynamic Cache (for consistency of non-standard keys)
+                else if (DynamicKeyColors.ContainsKey(kvp.Key))
+                {
+                    color = DynamicKeyColors[kvp.Key];
+                }
+                // 3. Generate New Random Color and Cache it
+                else
+                {
+                    color = GetRandomBrush();
+                    DynamicKeyColors[kvp.Key] = color;
+                }
 
                 dynamicCounts.Add(new CountItem
                 {
