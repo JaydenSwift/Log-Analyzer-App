@@ -13,6 +13,8 @@ using System.Threading.Tasks;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.ComponentModel;
+using System.Windows.Data;
+using System.Collections; // Needed for ICollectionView
 
 namespace Log_Analyzer_App
 {
@@ -124,12 +126,38 @@ namespace Log_Analyzer_App
         }
     }
 
+    // NEW: Model for dynamically binding column visibility
+    public class ColumnModel : INotifyPropertyChanged
+    {
+        public string Header { get; set; }
+        public string FieldName { get; set; } // Matches the key in LogEntry.Fields
+
+        private bool _isVisible = true;
+        public bool IsVisible
+        {
+            get => _isVisible;
+            set { _isVisible = value; OnPropertyChanged(nameof(IsVisible)); }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+        protected virtual void OnPropertyChanged(string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+    }
+
     /// <summary>
     /// Interaction logic for LogAnalyzerView.xaml
     /// </summary>
     public partial class LogAnalyzerView : UserControl
     {
         private ObservableCollection<LogEntry> _logEntries = LogDataStore.LogEntries;
+
+        // NEW: Collection View Source for Filtering and Sorting
+        private CollectionViewSource LogCollectionViewSource { get; set; }
+
+        // NEW: Observable collection to hold the Column Visibility Models
+        public ObservableCollection<ColumnModel> ColumnControls { get; set; } = new ObservableCollection<ColumnModel>();
 
         // FIX: Non-static class to hold preview binding data and implement INotifyPropertyChanged
         public class LogPreviewModel : INotifyPropertyChanged
@@ -191,8 +219,16 @@ namespace Log_Analyzer_App
 
             this.DataContext = this;
 
-            // Bind the static ObservableCollection to the DataGrid's ItemsSource
-            LogDataGrid.ItemsSource = _logEntries;
+            // --- NEW: Initialize CollectionViewSource for filtering ---
+            LogCollectionViewSource = new CollectionViewSource();
+            // Assign the raw log data to the source
+            LogCollectionViewSource.Source = _logEntries;
+            // Add the filter event handler (the grep logic)
+            LogCollectionViewSource.Filter += LogFilter;
+
+            // Bind the DataGrid's ItemsSource to the filtered/sorted view
+            LogDataGrid.ItemsSource = LogCollectionViewSource.View;
+            // ---------------------------------------------------------
 
             // Since we set AutoGenerateColumns=False in XAML, we only need to call SetupDynamicColumns 
             // when data is loaded, not on AutoGeneratingColumn event.
@@ -200,6 +236,7 @@ namespace Log_Analyzer_App
             // Ensure columns are set up on startup if data already exists (e.g., app restart)
             if (_logEntries.Any())
             {
+                InitializeColumnControls(LogDataStore.CurrentPatternDefinition.FieldNames);
                 SetupDynamicColumns();
             }
 
@@ -208,6 +245,141 @@ namespace Log_Analyzer_App
 
             ShowParserStatus(false);
         }
+
+        /// <summary>
+        /// NEW: Initializes the ColumnControls collection based on the current parsed fields.
+        /// </summary>
+        private void InitializeColumnControls(List<string> fieldNames)
+        {
+            ColumnControls.Clear();
+            foreach (var fieldName in fieldNames)
+            {
+                // Ensure the Header/FieldName is capitalized for better display
+                string displayHeader = char.ToUpper(fieldName[0]) + fieldName.Substring(1);
+                ColumnControls.Add(new ColumnModel { Header = displayHeader, FieldName = fieldName, IsVisible = true });
+            }
+        }
+
+        /// <summary>
+        /// NEW: Updates the visibility of the corresponding DataGrid column when the checkbox state changes.
+        /// </summary>
+        private void ColumnVisibility_Toggled(object sender, RoutedEventArgs e)
+        {
+            // Find the DataGrid column corresponding to the toggled checkbox and update its visibility.
+            if (sender is CheckBox checkBox && checkBox.DataContext is ColumnModel model)
+            {
+                // Find the column by its header (which matches the model's field name for DataGridTextColumn)
+                // NOTE: We match against the raw fieldName, not the capitalized Header, because SetupDynamicColumns uses the raw fieldName as the header value.
+                var dataGridColumn = LogDataGrid.Columns.FirstOrDefault(
+                    c => c.Header.ToString() == model.FieldName
+                );
+
+                if (dataGridColumn != null)
+                {
+                    // Set the WPF column visibility based on the model state
+                    dataGridColumn.Visibility = model.IsVisible ? Visibility.Visible : Visibility.Collapsed;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Grep-like search implementation. Filters the collection based on keyword search.
+        /// (Date Range Filter has been removed as requested).
+        /// </summary>
+        private void LogFilter(object sender, FilterEventArgs e)
+        {
+            if (!(e.Item is LogEntry logEntry))
+            {
+                e.Accepted = false;
+                return;
+            }
+
+            // --- 1. Keyword (Grep) Filter ---
+            string searchTerm = SearchTextBox.Text.Trim();
+            bool isInverted = InvertFilterCheckBox.IsChecked ?? false;
+
+            // If the search box is empty, the keyword filter is always successful (match=true)
+            bool keywordMatch = true;
+
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                // Prepare keywords for case-insensitive AND search
+                string[] keywords = searchTerm
+                    .ToLower()
+                    .Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+                // Reset match assumption to false if we have keywords to check
+                keywordMatch = false;
+
+                if (keywords.Any())
+                {
+                    bool allKeywordsFound = true;
+                    foreach (string keyword in keywords)
+                    {
+                        bool keywordFoundInEntry = false;
+
+                        // Check if the current keyword is found in ANY field
+                        foreach (var field in logEntry.Fields)
+                        {
+                            if (field.Value != null && field.Value.ToLower().Contains(keyword))
+                            {
+                                keywordFoundInEntry = true;
+                                break;
+                            }
+                        }
+
+                        if (!keywordFoundInEntry)
+                        {
+                            allKeywordsFound = false;
+                            break;
+                        }
+                    }
+
+                    // The log entry is considered a keyword match if ALL keywords were found.
+                    keywordMatch = allKeywordsFound;
+                }
+                else
+                {
+                    // If searchTerm was non-empty but produced no keywords (e.g., just spaces),
+                    // we stick with keywordMatch = true to not filter anything out unnecessarily.
+                    keywordMatch = true;
+                }
+            }
+
+            // --- Final Acceptance Logic ---
+            // If inverted, accept if there was NO match.
+            // If not inverted, accept if there WAS a match.
+            e.Accepted = isInverted ? !keywordMatch : keywordMatch;
+        }
+
+
+        /// <summary>
+        /// Event handler for the SearchTextBox. Refreshes the CollectionViewSource filter 
+        /// whenever the search text changes to immediately update the DataGrid.
+        /// </summary>
+        private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            // This forces the LogFilter method to run again on every item in the collection
+            if (LogCollectionViewSource?.View != null)
+            {
+                LogCollectionViewSource.View.Refresh();
+            }
+        }
+
+        /// <summary>
+        /// NEW: Event handler for the InvertFilterCheckBox.
+        /// </summary>
+        private void InvertFilter_CheckedOrUnchecked(object sender, RoutedEventArgs e)
+        {
+            // This forces the LogFilter method to run again, applying the new inversion state
+            if (LogCollectionViewSource?.View != null)
+            {
+                LogCollectionViewSource.View.Refresh();
+            }
+        }
+
+        // Removed: DateRange_SelectedDateChanged handler (as requested)
+
 
         /// <summary>
         /// NEW: Manually creates and configures the DataGrid columns based on the user's current pattern definition.
@@ -227,6 +399,8 @@ namespace Log_Analyzer_App
                 fieldNames = new List<string> { "Message" };
             }
 
+            // NOTE: We rely on the initial ColumnControls collection to set the visibility.
+
             // Identify the last column for the Auto sizing with large MinWidth
             string lastFieldName = fieldNames.LastOrDefault();
 
@@ -236,12 +410,21 @@ namespace Log_Analyzer_App
                 // Create a new TextColumn
                 var column = new DataGridTextColumn
                 {
+                    // The Header must be set to the FieldName for the ColumnVisibility_Toggled handler to work
+                    // This is IMPORTANT: we use the raw field name as the Header for lookup
                     Header = fieldName,
                     IsReadOnly = true,
                     // Set the binding path to look into the LogEntry's Fields dictionary
-                    // This uses the dynamic property lookup capability of WPF binding.
                     Binding = new Binding($"Fields[{fieldName}]")
                 };
+
+                // Apply initial visibility from the ColumnControls model if it exists
+                var columnModel = ColumnControls.FirstOrDefault(c => c.FieldName == fieldName);
+                if (columnModel != null)
+                {
+                    column.Visibility = columnModel.IsVisible ? Visibility.Visible : Visibility.Collapsed;
+                }
+
 
                 // CRITICAL FIX: Use DataGridLength.Auto for all columns.
                 // The DataGrid will size the column to fit the widest content/header.
@@ -517,6 +700,9 @@ namespace Log_Analyzer_App
                     LogDataStore.CurrentPatternDefinition.FieldNames = logEntries.First().FieldOrder;
                 }
 
+                // NEW: Initialize column controls *after* updating the final field names
+                InitializeColumnControls(LogDataStore.CurrentPatternDefinition.FieldNames);
+
                 // --- NEW COLUMN LOGIC: MUST BE CALLED BEFORE ADDING ENTRIES ---
                 SetupDynamicColumns();
                 // -------------------------
@@ -535,6 +721,10 @@ namespace Log_Analyzer_App
                 // 5. Final UI update
                 PreviewModel.UpdateFromStore();
                 RefreshView();
+
+                // NEW: After successful load, ensure the filter is cleared and refreshed
+                SearchTextBox.Text = string.Empty;
+                LogCollectionViewSource.View.Refresh();
             }
             catch (Exception ex)
             {

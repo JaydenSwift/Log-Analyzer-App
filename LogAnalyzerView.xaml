@@ -58,7 +58,8 @@
 
                     <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="15 10">
                         <TextBlock Text="Log Lines" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        <!-- Bind Badged content to actual log count -->
+                        <!-- Bind Badged content to actual log count of the FILTERED view -->
+                        <!-- NOTE: Binding to Items.Count shows the filtered count, which is correct for the UI -->
                         <materialDesign:Badged Content="{Binding ElementName=LogDataGrid, Path=Items.Count}" Margin="10 3 0 0" BadgeBackground="{DynamicResource MaterialDesignLightTealAccentBrush}" BadgeForeground="White"/>
                     </StackPanel>
 
@@ -208,13 +209,49 @@
                     </StackPanel>
                 </materialDesign:Card>
 
-                <!-- Filters Card -->
+                <!-- Filters Card (Updated) -->
                 <materialDesign:Card UniformCornerRadius="10" Margin="0 0 0 15" Padding="15">
                     <StackPanel>
                         <TextBlock Text="Filters" FontWeight="Bold" Margin="0 0 0 10"/>
-                        <CheckBox Content="Show only Errors" Margin="0 5"/>
-                        <CheckBox Content="Filter by Date Range" Margin="0 5"/>
-                        <TextBox materialDesign:HintAssist.Hint="Search Message Content" Style="{StaticResource MaterialDesignFloatingHintTextBox}" Margin="0 10 0 0"/>
+
+                        <!-- Column Visibility Controls -->
+                        <TextBlock Text="Column Visibility" Opacity="0.8" FontWeight="SemiBold" Margin="0 0 0 5"/>
+
+                        <!-- FIX: Removed UniformCornerRadius from ScrollViewer and applied it to a new wrapping Card -->
+                        <materialDesign:Card UniformCornerRadius="4" Padding="0" Margin="0 0 0 10" Background="{DynamicResource MaterialDesignPaper}">
+                            <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto" BorderThickness="0" Padding="10">
+                                <ItemsControl ItemsSource="{Binding ColumnControls}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox Content="{Binding Header}" 
+                                                      IsChecked="{Binding IsVisible, Mode=TwoWay}"
+                                                      Checked="ColumnVisibility_Toggled"
+                                                      Unchecked="ColumnVisibility_Toggled"
+                                                      Margin="0 0 15 5"
+                                                      />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </materialDesign:Card>
+
+                        <!-- Invert Filter Checkbox -->
+                        <CheckBox x:Name="InvertFilterCheckBox"
+                                  Content="Invert Match (Exclude logs containing keywords)"
+                                  Margin="0 0 0 10"
+                                  Checked="InvertFilter_CheckedOrUnchecked"
+                                  Unchecked="InvertFilter_CheckedOrUnchecked"/>
+
+                        <TextBox x:Name="SearchTextBox"
+                                 materialDesign:HintAssist.Hint="Search Content (Grep: multiple words means AND)" 
+                                 Style="{StaticResource MaterialDesignFloatingHintTextBox}" 
+                                 Margin="0 5 0 0"
+                                 TextChanged="SearchTextBox_TextChanged"/>
                     </StackPanel>
                 </materialDesign:Card>
             </StackPanel>
