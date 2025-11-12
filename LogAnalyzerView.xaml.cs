@@ -19,6 +19,15 @@ using System.Globalization; // Needed for DateTime parsing
 
 namespace Log_Analyzer_App
 {
+    // NEW: Enum for time-based grouping in charts
+    public enum TimeRangeType
+    {
+        Hours,
+        Days,
+        Weeks,
+        Months
+    }
+
     // --- New Model for Dynamic Summary Stats ---
     public class CountItem : INotifyPropertyChanged
     {
@@ -458,6 +467,126 @@ namespace Log_Analyzer_App
 
             return dynamicCounts;
         }
+
+        /// <summary>
+        /// NEW: Calculates the event count grouped by the specified time range (Hour, Day, Week, Month).
+        /// This is used primarily by the ChartViewer for independent analysis.
+        /// </summary>
+        /// <param name="rangeType">The time range to group by.</param>
+        /// <param name="startDate">The chart's start date filter.</param>
+        /// <param name="endDate">The chart's end date filter.</param>
+        /// <param name="startTimeText">The chart's start time text.</param>
+        /// <param name="endTimeText">The chart's end time text.</param>
+        /// <returns>A new ObservableCollection<CountItem> representing the time-based counts.</returns>
+        public static ObservableCollection<CountItem> GetTimeRangeSummaryCounts(TimeRangeType rangeType,
+            DateTime? startDate = null, DateTime? endDate = null, string startTimeText = null, string endTimeText = null)
+        {
+            var dynamicCounts = new ObservableCollection<CountItem>();
+
+            string timestampFieldName = SelectedTimestampField;
+
+            // If no timestamp field is selected, we cannot perform time analysis.
+            if (string.IsNullOrEmpty(timestampFieldName))
+            {
+                return dynamicCounts;
+            }
+
+            // --- Determine the Source Data (identical filtering logic as GetDynamicSummaryCounts) ---
+            IEnumerable<LogEntry> sourceEntries;
+
+            DateTime? chartFilterStart = CombineDateTime(startDate, startTimeText);
+            DateTime? chartFilterEnd = CombineDateTime(endDate, endTimeText);
+
+            if (endDate.HasValue && string.IsNullOrWhiteSpace(endTimeText) && chartFilterEnd.HasValue)
+            {
+                chartFilterEnd = endDate.Value.Date.AddDays(1).AddTicks(-1);
+            }
+
+            // Apply Chart-specific filter
+            sourceEntries = LogEntries.Where(logEntry =>
+            {
+                // Check if chart filter is enabled
+                if (!chartFilterStart.HasValue && !chartFilterEnd.HasValue) return true;
+
+                // Apply date filter
+                if (logEntry.Fields.TryGetValue(timestampFieldName, out string timestampValue) &&
+                    TryParseLogDateTime(timestampValue, out DateTime logDateTime))
+                {
+                    bool match = true;
+                    if (chartFilterStart.HasValue && logDateTime < chartFilterStart.Value) match = false;
+                    if (chartFilterEnd.HasValue && logDateTime > chartFilterEnd.Value) match = false;
+                    return match;
+                }
+                return false;
+            });
+
+            if (!sourceEntries.Any())
+            {
+                return dynamicCounts;
+            }
+
+            // --- Grouping by Time Range ---
+
+            // 1. Convert all timestamps in the filtered set into DateTime objects
+            var validDates = sourceEntries
+                .Where(e => e.Fields.ContainsKey(timestampFieldName))
+                .Select(e => e.Fields[timestampFieldName])
+                .Where(v => TryParseLogDateTime(v, out DateTime _))
+                .Select(v => { TryParseLogDateTime(v, out DateTime dt); return dt; })
+                .ToList();
+
+            if (!validDates.Any())
+            {
+                return dynamicCounts;
+            }
+
+            // 2. Group by the appropriate interval and format the key
+            var groupedData = validDates
+                .GroupBy(dt =>
+                {
+                    switch (rangeType)
+                    {
+                        case TimeRangeType.Hours:
+                            // Group by year, month, day, and hour (e.g., 2025-10-23 09)
+                            return dt.ToString("yyyy-MM-dd HH");
+                        case TimeRangeType.Days:
+                            // Group by year, month, day (e.g., 2025-10-23)
+                            return dt.ToString("yyyy-MM-dd");
+                        case TimeRangeType.Weeks:
+                            // Group by ISO week (requires CultureInfo for WeekOfYear)
+                            // Key format: YYYY-WW (e.g., 2025-43)
+                            System.Globalization.Calendar calendar = CultureInfo.InvariantCulture.Calendar;
+                            int week = calendar.GetWeekOfYear(dt, CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
+                            // To ensure unique grouping across years, include the year
+                            return dt.Year.ToString() + "-" + week.ToString("D2");
+                        case TimeRangeType.Months:
+                            // Group by year and month (e.g., 2025-10)
+                            return dt.ToString("yyyy-MM");
+                        default:
+                            return dt.ToString(); // Fallback
+                    }
+                })
+                .OrderBy(g => g.Key) // Order chronologically
+                .ToDictionary(g => g.Key, g => (double)g.Count());
+
+            // 3. Format and Populate CountItems (using a consistent color, as this is a single series)
+            System.Windows.Media.Brush defaultColor = System.Windows.Media.Brushes.DodgerBlue; // Use a distinct color
+
+            foreach (var kvp in groupedData)
+            {
+                // The key is the formatted time range string (e.g., "2025-10-23 09", "2025-43")
+                // We don't need to reformat the key for display here, the chart X-axis will use it.
+                dynamicCounts.Add(new CountItem
+                {
+                    Key = kvp.Key,
+                    Count = kvp.Value,
+                    Color = defaultColor
+                });
+            }
+
+            return dynamicCounts;
+        }
+
 
         /// <summary>
         /// MODIFIED: Calculates the count for all unique values in the designated field 

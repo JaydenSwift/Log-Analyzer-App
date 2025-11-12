@@ -83,6 +83,42 @@ namespace Log_Analyzer_App
 
         // --- Chart Grouping & State Variables ---
 
+        // NEW: Time Series Chart Properties
+        private SeriesCollection _timeSeriesCollection = new SeriesCollection();
+        public SeriesCollection TimeSeriesCollection
+        {
+            get => _timeSeriesCollection;
+            set { _timeSeriesCollection = value; OnPropertyChanged(nameof(TimeSeriesCollection)); }
+        }
+
+        private string[] _timeLabels;
+        public string[] TimeLabels
+        {
+            get => _timeLabels;
+            set { _timeLabels = value; OnPropertyChanged(nameof(TimeLabels)); }
+        }
+
+        // NEW: Time Range Grouping Properties
+        private TimeRangeType _selectedTimeRange = TimeRangeType.Hours;
+        public TimeRangeType SelectedTimeRange
+        {
+            get => _selectedTimeRange;
+            set
+            {
+                if (_selectedTimeRange != value)
+                {
+                    _selectedTimeRange = value;
+                    // Update the time chart immediately when range type changes
+                    UpdateTimeRangeChart(value);
+                    OnPropertyChanged(nameof(SelectedTimeRange));
+                }
+            }
+        }
+
+        // Exposes the enum values for ComboBox binding
+        public Array TimeRangeTypes => Enum.GetValues(typeof(TimeRangeType));
+
+
         // NEW: Collection to hold items for the Custom Legend (Bar Chart)
         private ObservableCollection<ChartLegendItem> _barChartLegendItems = new ObservableCollection<ChartLegendItem>();
         public ObservableCollection<ChartLegendItem> BarChartLegendItems
@@ -267,6 +303,9 @@ namespace Log_Analyzer_App
             {
                 ApplyChartFilter_Click(null, null);
             }
+
+            // NEW: Initial call to update the time series chart
+            UpdateTimeRangeChart(SelectedTimeRange);
         }
 
         /// <summary>
@@ -278,7 +317,9 @@ namespace Log_Analyzer_App
             {
                 SeriesCollection.Clear();
                 PieSeriesCollection.Clear();
+                TimeSeriesCollection.Clear(); // Clear time series too
                 Labels = new string[0];
+                TimeLabels = new string[0]; // Clear time series labels
                 BarChartLegendItems.Clear();
                 FilteredLogCount = 0; // Reset count on clear
                 return;
@@ -303,6 +344,9 @@ namespace Log_Analyzer_App
             // 2. Update Charts
             UpdateBarChart(dynamicLogData);
             UpdatePieChart(dynamicLogData, SliceThresholdSlider.Value);
+
+            // NEW: Update the Time Range Chart (uses the same date/time filters)
+            UpdateTimeRangeChart(SelectedTimeRange);
         }
 
         // --- Core Update Methods ---
@@ -399,6 +443,53 @@ namespace Log_Analyzer_App
                 }
             }
         }
+
+        /// <summary>
+        /// NEW: Updates the Time Range Bar Chart based on the selected time range type and current date filters.
+        /// </summary>
+        /// <param name="rangeType">The time range to group by (Hours, Days, Weeks, Months).</param>
+        private void UpdateTimeRangeChart(TimeRangeType rangeType)
+        {
+            TimeSeriesCollection.Clear();
+
+            // CRITICAL: Get data using the new centralized helper, passing the chart's local filter properties.
+            ObservableCollection<CountItem> timeLogData = LogDataStore.GetTimeRangeSummaryCounts(
+                rangeType,
+                ChartStartDate,
+                ChartEndDate,
+                ChartStartTimeText,
+                ChartEndTimeText
+            );
+
+            if (!timeLogData.Any())
+            {
+                TimeLabels = new string[0];
+                OnPropertyChanged(nameof(TimeLabels)); // Notify update to clear axis labels
+                return;
+            }
+
+            // Extract labels (the formatted time strings)
+            TimeLabels = timeLogData.Select(c => c.Key).ToArray();
+            OnPropertyChanged(nameof(TimeLabels)); // Notify update for the Axis.Labels binding
+
+            // Extract values for the single series
+            var values = timeLogData.Select(c => c.Count).ToList();
+
+            // The time chart is a single series chart
+            var series = new ColumnSeries
+            {
+                // Title for the single series bar chart (e.g., "Total Events")
+                Title = "Events Count",
+                Values = new ChartValues<double>(values),
+                // Use the color returned by the store (DodgerBlue)
+                Fill = timeLogData.FirstOrDefault()?.Color ?? System.Windows.Media.Brushes.DodgerBlue,
+                DataLabels = true,
+                LabelPoint = point => point.Y.ToString("N0")
+            };
+
+            TimeSeriesCollection.Add(series);
+        }
+
 
         /// <summary>
         /// NEW: Toggles the visibility of the linked LiveCharts Series object when a legend item is clicked.

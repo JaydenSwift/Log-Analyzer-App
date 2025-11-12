@@ -32,7 +32,7 @@
     </UserControl.Resources>
 
     <Grid Background="{DynamicResource MaterialDesignPaper}" Margin="20">
-        <!-- NEW: Wrap the main content StackPanel in a ScrollViewer -->
+        <!-- Wrap the main content StackPanel in a ScrollViewer -->
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="20">
                 <TextBlock Text="Log Event Distribution Analysis" FontSize="32" FontWeight="Bold" Margin="0 0 0 10" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryHueMidBrush}"/>
@@ -48,7 +48,7 @@
 
                             <TextBlock Grid.Column="0" Text="Chart Filtering" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Left" Foreground="{DynamicResource PrimaryHueMidBrush}"/>
 
-                            <!-- NEW: Displayed Log Lines Count Display -->
+                            <!-- Displayed Log Lines Count Display -->
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="10 0 0 0">
                                 <TextBlock Text="Displayed Log Lines:" Opacity="0.8" VerticalAlignment="Center" Margin="0 0 5 0"/>
                                 <materialDesign:Badged Content="{Binding FilteredLogCount}" 
@@ -135,7 +135,7 @@
                 </materialDesign:Card>
                 <!-- END Chart Filter Controls -->
 
-                <!-- MODIFIED: Removed Height="650" to allow content to size freely within the ScrollViewer -->
+                <!-- Main Chart Area (Two Columns: Raw Counts & Percentage Distribution) -->
                 <materialDesign:Card UniformCornerRadius="10" Padding="15">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -238,6 +238,40 @@
                         </Grid>
                     </Grid>
                 </materialDesign:Card>
+
+                <!-- NEW: Time Series Chart Area (Full Width) -->
+                <materialDesign:Card UniformCornerRadius="10" Padding="15" Margin="0 20 0 0">
+                    <StackPanel>
+                        <TextBlock Text="Event Trend Over Time" FontSize="18" FontWeight="SemiBold" Margin="0 0 0 15" HorizontalAlignment="Center" Foreground="{DynamicResource PrimaryHueMidBrush}"/>
+
+                        <!-- Dropdown for Time Range Selection -->
+                        <ComboBox materialDesign:HintAssist.Hint="Group by Time Range"
+                                  ItemsSource="{Binding TimeRangeTypes}"
+                                  SelectedItem="{Binding SelectedTimeRange, Mode=TwoWay}"
+                                  HorizontalAlignment="Center"
+                                  Width="200"
+                                  Margin="0 0 0 20"/>
+
+                        <!-- Time Series Bar Chart -->
+                        <lvc:CartesianChart Series="{Binding TimeSeriesCollection}" 
+                                            LegendLocation="None" 
+                                            Hoverable="True"
+                                            Height="400">
+
+                            <lvc:CartesianChart.AxisX>
+                                <!-- The title will be dynamic based on the SelectedTimeRange -->
+                                <lvc:Axis Title="{Binding SelectedTimeRange}" ShowLabels="True" Labels="{Binding TimeLabels}"/>
+                            </lvc:CartesianChart.AxisX>
+
+                            <lvc:CartesianChart.AxisY>
+                                <lvc:Axis Title="Event Count" LabelFormatter="{Binding Formatter}"/>
+                            </lvc:CartesianChart.AxisY>
+
+                        </lvc:CartesianChart>
+                    </StackPanel>
+                </materialDesign:Card>
+                <!-- END NEW: Time Series Chart Area -->
+
             </StackPanel>
         </ScrollViewer>
     </Grid>
