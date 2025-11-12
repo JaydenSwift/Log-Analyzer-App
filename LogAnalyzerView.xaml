@@ -27,6 +27,8 @@
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
+                        <!-- New Column for Export Button -->
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
@@ -37,8 +39,20 @@
                                TextWrapping="Wrap"
                                Opacity="0.7"/>
 
-                    <Button Content="LOAD FILE" 
+                    <!-- NEW: Export Button -->
+                    <Button Content="EXPORT" 
                             Grid.Column="1" 
+                            x:Name="ExportButton"
+                            Style="{StaticResource MaterialDesignRaisedButton}"
+                            materialDesign:ButtonAssist.CornerRadius="5"
+                            ToolTip="Export the currently filtered log entries."
+                            Margin="10 0 0 0"
+                            Click="ExportLog_Click"
+                            IsEnabled="False"
+                            />
+
+                    <Button Content="LOAD FILE" 
+                            Grid.Column="2" 
                             x:Name="LoadFileButton"
                             Style="{StaticResource MaterialDesignRaisedButton}"
                             materialDesign:ButtonAssist.CornerRadius="5"

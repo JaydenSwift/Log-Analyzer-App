@@ -16,6 +16,7 @@ using System.ComponentModel;
 using System.Collections; // Needed for ICollectionView
 using System.Windows.Media; // Explicitly imported for Brush, Color, SolidColorBrush
 using System.Globalization; // Needed for DateTime parsing
+using System.Text; // Needed for StringBuilder/Encoding
 
 namespace Log_Analyzer_App
 {
@@ -1176,6 +1177,9 @@ namespace Log_Analyzer_App
         {
             FilePathTextBlock.Text = LogDataStore.CurrentFilePath;
 
+            // NEW: Enable/Disable Export button based on data existence
+            ExportButton.IsEnabled = LogDataStore.LogEntries.Any();
+
             // Update the pattern display elements (only visible when a file is selected)
             PatternDisplayTextBlock.Text = LogDataStore.CurrentPatternDefinition.Pattern;
             // FIX: Removed duplicate CurrentPatternDefinition access
@@ -1362,6 +1366,157 @@ namespace Log_Analyzer_App
         }
 
         /// <summary>
+        /// NEW: Event handler for the Export button. Opens the export options pop-up.
+        /// </summary>
+        private void ExportLog_Click(object sender, RoutedEventArgs e)
+        {
+            // 1. Ensure there is data to export (even if filter results in zero, we can still show the dialog)
+            if (!LogDataStore.LogEntries.Any())
+            {
+                MessageBox.Show("No log file has been loaded or parsed yet.", "Export Unavailable", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // 2. Open the custom modal dialog with the current column definitions
+            var exportWindow = new ExportWindow(this.ColumnControls);
+
+            if (exportWindow.ShowDialog() == true)
+            {
+                // The user clicked 'Export' in the modal.
+                // We use the CollectionViewSource.View.Cast<LogEntry>().ToList() to get only the filtered items
+                var filterItems = LogCollectionViewSource.View.Cast<LogEntry>().ToList();
+
+                if (!filterItems.Any())
+                {
+                    MessageBox.Show("The current filter selection resulted in zero log entries to export.", "No Data to Export", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // 3. Prompt for file save location
+                SaveFileDialog saveDialog = new SaveFileDialog();
+
+                string extension;
+                string filter;
+
+                switch (exportWindow.FinalFormat)
+                {
+                    case ExportFormat.CSV:
+                        extension = "csv";
+                        filter = "CSV (Comma Separated Values)|*.csv";
+                        break;
+                    case ExportFormat.TXT:
+                        extension = "txt";
+                        filter = "TXT (Plain Text - Tab Separated)|*.txt";
+                        break;
+                    case ExportFormat.JSON:
+                        extension = "json";
+                        filter = "JSON (JavaScript Object Notation)|*.json";
+                        break;
+                    default:
+                        // Should not happen, but for safety
+                        extension = "txt";
+                        filter = "All files (*.*)|*.*";
+                        break;
+                }
+
+                saveDialog.Filter = filter + "|All files (*.*)|*.*";
+                saveDialog.FileName = "FilteredLogExport." + extension;
+                saveDialog.Title = "Save Filtered Log File";
+
+                if (saveDialog.ShowDialog() == true)
+                {
+                    // 4. Perform the export
+                    try
+                    {
+                        ExportFilteredLogs(
+                            saveDialog.FileName,
+                            filterItems,
+                            exportWindow.FinalColumns.Where(c => c.IsVisible).ToList(),
+                            exportWindow.FinalFormat
+                        );
+                        MessageBox.Show($"Successfully exported {filterItems.Count} lines to:\n{saveDialog.FileName}", "Export Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"An error occurred during export: {ex.Message}", "Export Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// NEW: Performs the core logic of exporting the filtered log entries to a file.
+        /// </summary>
+        private void ExportFilteredLogs(string filePath, List<LogEntry> logEntries, List<ColumnModel> columnsToExport, ExportFormat format)
+        {
+            if (!columnsToExport.Any() || !logEntries.Any()) return;
+
+            // --- JSON EXPORT ---
+            if (format == ExportFormat.JSON)
+            {
+                // Create a list of dictionaries, containing only the selected fields
+                var exportData = logEntries.Select(entry =>
+                {
+                    var dict = new Dictionary<string, string>();
+                    foreach (var col in columnsToExport)
+                    {
+                        // Use the Header as the JSON key for readability, defaulting to FieldName if header is empty
+                        string key = col.Header.Replace(" ", "_"); // Sanitize key for JSON
+
+                        // Safely get the value
+                        if (entry.Fields.TryGetValue(col.FieldName, out string value))
+                        {
+                            dict.Add(key, value);
+                        }
+                        else
+                        {
+                            dict.Add(key, "N/A");
+                        }
+                    }
+                    return dict;
+                }).ToList();
+
+                // Serialize the list of dictionaries to a JSON string
+                // Use indented formatting for human readability
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                string jsonString = JsonSerializer.Serialize(exportData, options);
+
+                // Write to file
+                File.WriteAllText(filePath, jsonString, Encoding.UTF8);
+                return;
+            }
+
+            // --- CSV / TXT EXPORT ---
+            char delimiter = format == ExportFormat.CSV ? ',' : '\t';
+            var sb = new StringBuilder();
+
+            // 1. Write Header Row
+            // Use the ColumnModel Header for the output header row
+            string header = string.Join(delimiter.ToString(), columnsToExport.Select(c => $"\"{c.Header}\""));
+            sb.AppendLine(header);
+
+            // 2. Write Data Rows
+            foreach (var entry in logEntries)
+            {
+                var row = columnsToExport.Select(column =>
+                {
+                    // Safely try to get the field value
+                    if (entry.Fields.TryGetValue(column.FieldName, out string value))
+                    {
+                        // Escape quotes and wrap in quotes for robust CSV/TSV handling
+                        // Newlines are removed for single-line log entries
+                        return $"\"{value.Replace("\"", "\"\"").Replace("\r", "").Replace("\n", "")}\"";
+                    }
+                    return "\"N/A\""; // Default value if field is missing
+                });
+                sb.AppendLine(string.Join(delimiter.ToString(), row));
+            }
+
+            // 3. Write to file
+            File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
+        }
+
+        /// <summary>
         /// Encapsulates the core parsing logic, triggered after the user confirms the pattern.
         /// </summary>
         /// <param name="isBestEffortParse">True if partial success (0 matches) is acceptable (used by default button).</param>
@@ -1378,6 +1533,7 @@ namespace Log_Analyzer_App
             ShowParserStatus(true); // Show loading spinner/status text, hide pattern choice
             FilePathTextBlock.Text = LogDataStore.CurrentFilePath; // Update display
             LoadFileButton.IsEnabled = false; // Disable button during processing
+            ExportButton.IsEnabled = false; // Disable export button during processing
 
             try
             {
@@ -1467,6 +1623,7 @@ namespace Log_Analyzer_App
                 LogDataStore.SelectedFileForParsing = null; // Clear the temporary path
                 // Note: LogDataStore.OriginalFilePath remains set for future parsing attempts
                 LoadFileButton.IsEnabled = true; // Re-enable Load button
+                // ExportButton.IsEnabled state is handled by RefreshView (called above)
             }
         }
 
@@ -1687,6 +1844,7 @@ namespace Log_Analyzer_App
 
                 // --- NEW DYNAMIC PATTERN SUGGESTION (Robust Check) ---
                 LoadFileButton.IsEnabled = false; // Disable button during suggestion
+                ExportButton.IsEnabled = false; // Disable export button during suggestion
 
                 // Run the Python suggester command, passing the full file path for robust checking
                 await Task.Run(() => RunPythonParser("suggest_robust_pattern", openFileDialog.FileName, null, null));
