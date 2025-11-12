@@ -32,209 +32,213 @@
     </UserControl.Resources>
 
     <Grid Background="{DynamicResource MaterialDesignPaper}" Margin="20">
-        <StackPanel Margin="20">
-            <TextBlock Text="Log Event Distribution Analysis" FontSize="32" FontWeight="Bold" Margin="0 0 0 10" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryHueMidBrush}"/>
+        <!-- NEW: Wrap the main content StackPanel in a ScrollViewer -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="20">
+                <TextBlock Text="Log Event Distribution Analysis" FontSize="32" FontWeight="Bold" Margin="0 0 0 10" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryHueMidBrush}"/>
 
-            <!-- Chart Filter Controls -->
-            <materialDesign:Card UniformCornerRadius="10" Padding="15" Margin="0 0 0 20">
-                <StackPanel>
-                    <Grid Margin="0 0 0 15">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
+                <!-- Chart Filter Controls -->
+                <materialDesign:Card UniformCornerRadius="10" Padding="15" Margin="0 0 0 20">
+                    <StackPanel>
+                        <Grid Margin="0 0 0 15">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
 
-                        <TextBlock Grid.Column="0" Text="Chart Filtering" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Left" Foreground="{DynamicResource PrimaryHueMidBrush}"/>
+                            <TextBlock Grid.Column="0" Text="Chart Filtering" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Left" Foreground="{DynamicResource PrimaryHueMidBrush}"/>
 
-                        <!-- NEW: Displayed Log Lines Count Display -->
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="10 0 0 0">
-                            <TextBlock Text="Displayed Log Lines:" Opacity="0.8" VerticalAlignment="Center" Margin="0 0 5 0"/>
-                            <materialDesign:Badged Content="{Binding FilteredLogCount}" 
-                                                   BadgeBackground="{DynamicResource MaterialDesignLightTealAccentBrush}" 
-                                                   BadgeForeground="White"
-                                                   VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Grid>
+                            <!-- NEW: Displayed Log Lines Count Display -->
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="10 0 0 0">
+                                <TextBlock Text="Displayed Log Lines:" Opacity="0.8" VerticalAlignment="Center" Margin="0 0 5 0"/>
+                                <materialDesign:Badged Content="{Binding FilteredLogCount}" 
+                                                       BadgeBackground="{DynamicResource MaterialDesignLightTealAccentBrush}" 
+                                                       BadgeForeground="White"
+                                                       VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Grid>
 
-                    <!-- Filter Inputs and Apply Button -->
+                        <!-- Filter Inputs and Apply Button -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Chart Grouping Dropdown (Left Column) -->
+                            <ComboBox materialDesign:HintAssist.Hint="Group Chart Data by Column"
+                                      ItemsSource="{Binding AvailableStatsFields}"
+                                      SelectedItem="{Binding SelectedStatsField, Mode=TwoWay}"
+                                      Grid.Column="0"
+                                      Margin="0 0 10 0"/>
+
+                            <!-- Date Pickers (Center Column) -->
+                            <StackPanel Grid.Column="1" Margin="5 0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="5"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Start Date -->
+                                    <DatePicker Grid.Column="0" 
+                                                materialDesign:HintAssist.Hint="Start Date"
+                                                SelectedDate="{Binding ChartStartDate, Mode=TwoWay}"/>
+
+                                    <TextBlock Grid.Column="1" Text="-" VerticalAlignment="Center" HorizontalAlignment="Center" Opacity="0.5"/>
+
+                                    <!-- End Date -->
+                                    <DatePicker Grid.Column="2" 
+                                                materialDesign:HintAssist.Hint=" End Date"
+                                                SelectedDate="{Binding ChartEndDate, Mode=TwoWay}"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- Time Pickers (Right Column) -->
+                            <StackPanel Grid.Column="2" Margin="10 0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="5"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Start Time -->
+                                    <TextBox Grid.Column="0" 
+                                             materialDesign:HintAssist.Hint="Start Time (HH:MM)"
+                                             Text="{Binding ChartStartTimeText}"/>
+
+                                    <TextBlock Grid.Column="1" Text="-" VerticalAlignment="Center" HorizontalAlignment="Center" Opacity="0.5"/>
+
+                                    <!-- End Time -->
+                                    <TextBox Grid.Column="2" 
+                                             materialDesign:HintAssist.Hint=" End Time (HH:MM)"
+                                             Text="{Binding ChartEndTimeText}"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- FIX: Changed style to the standard MaterialDesignRaisedButton and applied an accent background -->
+                            <Button Grid.Column="3"
+                                    Content="APPLY FILTER"
+                                    Style="{StaticResource MaterialDesignRaisedButton}"
+                                    Background="{DynamicResource SecondaryHueMidBrush}"
+                                    Foreground="{DynamicResource MaterialDesignBody}"
+                                    materialDesign:ButtonAssist.CornerRadius="5"
+                                    Click="ApplyChartFilter_Click"
+                                    Margin="10 0 0 0"
+                                    VerticalAlignment="Center"/>
+                        </Grid>
+                    </StackPanel>
+                </materialDesign:Card>
+                <!-- END Chart Filter Controls -->
+
+                <!-- MODIFIED: Removed Height="650" to allow content to size freely within the ScrollViewer -->
+                <materialDesign:Card UniformCornerRadius="10" Padding="15">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
-                        <!-- Chart Grouping Dropdown (Left Column) -->
-                        <ComboBox materialDesign:HintAssist.Hint="Group Chart Data by Column"
-                                  ItemsSource="{Binding AvailableStatsFields}"
-                                  SelectedItem="{Binding SelectedStatsField, Mode=TwoWay}"
-                                  Grid.Column="0"
-                                  Margin="0 0 10 0"/>
+                        <!-- Left Column: Bar Chart (Raw Counts) -->
+                        <Grid Grid.Column="0" Margin="0 0 10 0">
+                            <!-- Bar Chart -->
+                            <StackPanel>
+                                <TextBlock Text="Event Count Breakdown (Raw Counts)" FontWeight="SemiBold" Margin="0 0 0 10" HorizontalAlignment="Center" FontSize="18"/>
+                                <lvc:CartesianChart Series="{Binding SeriesCollection}" LegendLocation="None" 
+                                                    Hoverable="True"
+                                                    Height="500">
+                                    <!-- Height reduced slightly to make room for the custom legend -->
 
-                        <!-- Date Pickers (Center Column) -->
-                        <StackPanel Grid.Column="1" Margin="5 0">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="5"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
+                                    <lvc:CartesianChart.AxisX>
+                                        <lvc:Axis Title="{Binding SelectedStatsField}" ShowLabels="True"/>
+                                    </lvc:CartesianChart.AxisX>
 
-                                <!-- Start Date -->
-                                <DatePicker Grid.Column="0" 
-                                            materialDesign:HintAssist.Hint="Start Date"
-                                            SelectedDate="{Binding ChartStartDate, Mode=TwoWay}"/>
+                                    <lvc:CartesianChart.AxisY>
+                                        <lvc:Axis Title="Count" LabelFormatter="{Binding Formatter}"/>
+                                    </lvc:CartesianChart.AxisY>
 
-                                <TextBlock Grid.Column="1" Text="-" VerticalAlignment="Center" HorizontalAlignment="Center" Opacity="0.5"/>
+                                </lvc:CartesianChart>
 
-                                <!-- End Date -->
-                                <DatePicker Grid.Column="2" 
-                                            materialDesign:HintAssist.Hint=" End Date"
-                                            SelectedDate="{Binding ChartEndDate, Mode=TwoWay}"/>
-                            </Grid>
-                        </StackPanel>
+                                <!-- NEW: Custom Toggleable Legend -->
+                                <materialDesign:Card UniformCornerRadius="8" Padding="10" Margin="0 10 0 0" Background="{DynamicResource MaterialDesignLightBackground}">
+                                    <StackPanel>
+                                        <TextBlock Text="Bar Visibility" FontWeight="SemiBold" Opacity="0.8" Margin="0 0 0 5"/>
+                                        <ScrollViewer VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto" MaxHeight="50">
+                                            <ItemsControl ItemsSource="{Binding BarChartLegendItems}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <WrapPanel HorizontalAlignment="Center"/>
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate DataType="{x:Type local:ChartLegendItem}">
+                                                        <!-- Clickable Button for each Legend Item -->
+                                                        <Button CommandParameter="{Binding}" 
+                                                                Style="{StaticResource LegendToggleButtonStyle}" 
+                                                                Click="ToggleSeriesVisibility">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <!-- Colored Circle Icon -->
+                                                                <materialDesign:PackIcon Kind="CircleSmall" Width="12" Height="12" Margin="0 0 5 0" 
+                                                                                         Foreground="{Binding Color}" VerticalAlignment="Center"/>
+                                                                <!-- Key/Title -->
+                                                                <TextBlock Text="{Binding Key}" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                                            </StackPanel>
+                                                        </Button>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </StackPanel>
+                                </materialDesign:Card>
+                                <!-- END NEW: Custom Toggleable Legend -->
 
-                        <!-- Time Pickers (Right Column) -->
-                        <StackPanel Grid.Column="2" Margin="10 0">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="5"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
+                            </StackPanel>
+                        </Grid>
 
-                                <!-- Start Time -->
-                                <TextBox Grid.Column="0" 
-                                         materialDesign:HintAssist.Hint="Start Time (HH:MM)"
-                                         Text="{Binding ChartStartTimeText}"/>
+                        <!-- Right Column: Pie Chart (Proportional Breakdown) & Options -->
+                        <Grid Grid.Column="1" Margin="10 0 0 0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                                <TextBlock Grid.Column="1" Text="-" VerticalAlignment="Center" HorizontalAlignment="Center" Opacity="0.5"/>
+                            <!-- Pie Chart -->
+                            <StackPanel Grid.Row="0">
+                                <TextBlock Text="Percentage Distribution" FontWeight="SemiBold" Margin="0 0 0 10" HorizontalAlignment="Center" FontSize="18"/>
+                                <lvc:PieChart Series="{Binding PieSeriesCollection}" 
+                                              LegendLocation="Top" 
+                                              Hoverable="True"
+                                              InnerRadius="50"
+                                              Height="450">
+                                    <!-- Height increased to match the Bar Chart -->
+                                </lvc:PieChart>
+                            </StackPanel>
 
-                                <!-- End Time -->
-                                <TextBox Grid.Column="2" 
-                                         materialDesign:HintAssist.Hint=" End Time (HH:MM)"
-                                         Text="{Binding ChartEndTimeText}"/>
-                            </Grid>
-                        </StackPanel>
-
-                        <!-- FIX: Changed style to the standard MaterialDesignRaisedButton and applied an accent background -->
-                        <Button Grid.Column="3"
-                                Content="APPLY FILTER"
-                                Style="{StaticResource MaterialDesignRaisedButton}"
-                                Background="{DynamicResource SecondaryHueMidBrush}"
-                                Foreground="{DynamicResource MaterialDesignBody}"
-                                materialDesign:ButtonAssist.CornerRadius="5"
-                                Click="ApplyChartFilter_Click"
-                                Margin="10 0 0 0"
-                                VerticalAlignment="Center"/>
-                    </Grid>
-                </StackPanel>
-            </materialDesign:Card>
-            <!-- END Chart Filter Controls -->
-
-            <materialDesign:Card UniformCornerRadius="10" Padding="15" Height="650">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-
-                    <!-- Left Column: Bar Chart (Raw Counts) -->
-                    <Grid Grid.Column="0" Margin="0 0 10 0">
-                        <!-- Bar Chart -->
-                        <StackPanel>
-                            <TextBlock Text="Event Count Breakdown (Raw Counts)" FontWeight="SemiBold" Margin="0 0 0 10" HorizontalAlignment="Center" FontSize="18"/>
-                            <lvc:CartesianChart Series="{Binding SeriesCollection}" LegendLocation="None" 
-                                                Hoverable="True"
-                                                Height="500">
-                                <!-- Height reduced slightly to make room for the custom legend -->
-
-                                <lvc:CartesianChart.AxisX>
-                                    <lvc:Axis Title="{Binding SelectedStatsField}" ShowLabels="True"/>
-                                </lvc:CartesianChart.AxisX>
-
-                                <lvc:CartesianChart.AxisY>
-                                    <lvc:Axis Title="Count" LabelFormatter="{Binding Formatter}"/>
-                                </lvc:CartesianChart.AxisY>
-
-                            </lvc:CartesianChart>
-
-                            <!-- NEW: Custom Toggleable Legend -->
-                            <materialDesign:Card UniformCornerRadius="8" Padding="10" Margin="0 10 0 0" Background="{DynamicResource MaterialDesignLightBackground}">
+                            <!-- Options Box for Pie Chart -->
+                            <materialDesign:Card Grid.Row="1" UniformCornerRadius="8" Padding="15" Margin="0 15 0 0" Background="{DynamicResource MaterialDesignLightBackground}">
                                 <StackPanel>
-                                    <TextBlock Text="Bar Visibility" FontWeight="SemiBold" Opacity="0.8" Margin="0 0 0 5"/>
-                                    <ScrollViewer VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto" MaxHeight="50">
-                                        <ItemsControl ItemsSource="{Binding BarChartLegendItems}">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <WrapPanel HorizontalAlignment="Center"/>
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate DataType="{x:Type local:ChartLegendItem}">
-                                                    <!-- Clickable Button for each Legend Item -->
-                                                    <Button CommandParameter="{Binding}" 
-                                                            Style="{StaticResource LegendToggleButtonStyle}" 
-                                                            Click="ToggleSeriesVisibility">
-                                                        <StackPanel Orientation="Horizontal">
-                                                            <!-- Colored Circle Icon -->
-                                                            <materialDesign:PackIcon Kind="CircleSmall" Width="12" Height="12" Margin="0 0 5 0" 
-                                                                                     Foreground="{Binding Color}" VerticalAlignment="Center"/>
-                                                            <!-- Key/Title -->
-                                                            <TextBlock Text="{Binding Key}" VerticalAlignment="Center" FontWeight="SemiBold"/>
-                                                        </StackPanel>
-                                                    </Button>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
+                                    <TextBlock Text="Pie Chart Options" FontWeight="Bold" Margin="0 0 0 10"/>
+
+                                    <!-- Label Display Style -->
+                                    <TextBlock Text="Slice Label Content:" Opacity="0.8" Margin="0 0 0 5"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0 0 0 10">
+                                        <RadioButton x:Name="PercentRadio" Content="Percentage Only" IsChecked="True" GroupName="PieLabel" Margin="0 0 15 0" Foreground="{StaticResource MaterialDesignBody}" Checked="PieLabelMode_Changed"/>
+                                        <RadioButton x:Name="RawCountRadio" Content="Raw Count" GroupName="PieLabel" Foreground="{StaticResource MaterialDesignBody}" Checked="PieLabelMode_Changed"/>
+                                    </StackPanel>
+
+                                    <!-- Minimum Threshold Slider -->
+                                    <TextBlock Text="Minimum Slice Percentage (0%)" x:Name="SlicePercentageText" Opacity="0.8" Margin="0 5 0 5"/>
+                                    <Slider x:Name="SliceThresholdSlider" Value="0" Minimum="0" Maximum="10" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliceThresholdSlider_ValueChanged"/>
                                 </StackPanel>
                             </materialDesign:Card>
-                            <!-- END NEW: Custom Toggleable Legend -->
-
-                        </StackPanel>
+                        </Grid>
                     </Grid>
-
-                    <!-- Right Column: Pie Chart (Proportional Breakdown) & Options -->
-                    <Grid Grid.Column="1" Margin="10 0 0 0">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
-                        <!-- Pie Chart -->
-                        <StackPanel Grid.Row="0">
-                            <TextBlock Text="Percentage Distribution" FontWeight="SemiBold" Margin="0 0 0 10" HorizontalAlignment="Center" FontSize="18"/>
-                            <lvc:PieChart Series="{Binding PieSeriesCollection}" 
-                                          LegendLocation="Bottom" 
-                                          Hoverable="True"
-                                          InnerRadius="50"
-                                          Height="400">
-                                <!-- Height increased to match the Bar Chart -->
-                            </lvc:PieChart>
-                        </StackPanel>
-
-                        <!-- Options Box for Pie Chart -->
-                        <materialDesign:Card Grid.Row="1" UniformCornerRadius="8" Padding="15" Margin="0 15 0 0" Background="{DynamicResource MaterialDesignLightBackground}">
-                            <StackPanel>
-                                <TextBlock Text="Pie Chart Options" FontWeight="Bold" Margin="0 0 0 10"/>
-
-                                <!-- Label Display Style -->
-                                <TextBlock Text="Slice Label Content:" Opacity="0.8" Margin="0 0 0 5"/>
-                                <StackPanel Orientation="Horizontal" Margin="0 0 0 10">
-                                    <RadioButton x:Name="PercentRadio" Content="Percentage Only" IsChecked="True" GroupName="PieLabel" Margin="0 0 15 0" Foreground="{StaticResource MaterialDesignBody}" Checked="PieLabelMode_Changed"/>
-                                    <RadioButton x:Name="RawCountRadio" Content="Raw Count" GroupName="PieLabel" Foreground="{StaticResource MaterialDesignBody}" Checked="PieLabelMode_Changed"/>
-                                </StackPanel>
-
-                                <!-- Minimum Threshold Slider -->
-                                <TextBlock Text="Minimum Slice Percentage (0%)" x:Name="SlicePercentageText" Opacity="0.8" Margin="0 5 0 5"/>
-                                <Slider x:Name="SliceThresholdSlider" Value="0" Minimum="0" Maximum="10" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliceThresholdSlider_ValueChanged"/>
-                            </StackPanel>
-                        </materialDesign:Card>
-                    </Grid>
-                </Grid>
-            </materialDesign:Card>
-        </StackPanel>
+                </materialDesign:Card>
+            </StackPanel>
+        </ScrollViewer>
     </Grid>
 </UserControl>
