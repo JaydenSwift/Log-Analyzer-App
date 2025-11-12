@@ -182,6 +182,68 @@
                     <StackPanel>
                         <TextBlock Text="Filters" FontWeight="Bold" Margin="0 0 0 10"/>
 
+                        <!-- NEW: Date Range Filter Section -->
+                        <TextBlock Text="Date/Time Filter" Opacity="0.8" FontWeight="SemiBold" Margin="0 0 0 5"/>
+
+                        <!-- NEW: Timestamp Column Selector -->
+                        <ComboBox materialDesign:HintAssist.Hint="Select Timestamp Column"
+                                  ItemsSource="{Binding AvailableStatsFields}"
+                                  SelectedItem="{Binding SelectedTimestampField, Mode=TwoWay}"
+                                  Margin="0 0 0 10"
+                                  />
+
+                        <!-- Date Pickers -->
+                        <Grid Margin="0 0 0 10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="5"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Start Date -->
+                            <DatePicker Grid.Column="0" 
+                                        x:Name="StartDatePicker"
+                                        materialDesign:HintAssist.Hint="Start Date"
+                                        SelectedDate="{Binding StartDate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        SelectedDateChanged="DateRange_SelectedDateChanged"/>
+
+                            <!-- Separator -->
+                            <TextBlock Grid.Column="1" Text="-" VerticalAlignment="Center" HorizontalAlignment="Center" Opacity="0.5"/>
+
+                            <!-- End Date -->
+                            <DatePicker Grid.Column="2" 
+                                        x:Name="EndDatePicker"
+                                        materialDesign:HintAssist.Hint=" End Date"
+                                        SelectedDate="{Binding EndDate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        SelectedDateChanged="DateRange_SelectedDateChanged"/>
+                        </Grid>
+
+                        <!-- Time Pickers -->
+                        <Grid Margin="0 0 0 10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="5"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Start Time -->
+                            <TextBox Grid.Column="0" 
+                                     materialDesign:HintAssist.Hint="Start Time (HH:MM)"
+                                     Text="{Binding StartTimeText, UpdateSourceTrigger=PropertyChanged}"
+                                     TextChanged="TimeRange_TextChanged"/>
+
+                            <!-- Separator -->
+                            <TextBlock Grid.Column="1" Text="-" VerticalAlignment="Center" HorizontalAlignment="Center" Opacity="0.5"/>
+
+                            <!-- End Time -->
+                            <TextBox Grid.Column="2" 
+                                     materialDesign:HintAssist.Hint=" End Time (HH:MM)"
+                                     Text="{Binding EndTimeText, UpdateSourceTrigger=PropertyChanged}"
+                                     TextChanged="TimeRange_TextChanged"/>
+                        </Grid>
+                        <!-- END NEW: Date/Time Range Filter Section -->
+
+
                         <!-- Column Visibility Controls -->
                         <TextBlock Text="Column Visibility" Opacity="0.8" FontWeight="SemiBold" Margin="0 0 0 5"/>
 

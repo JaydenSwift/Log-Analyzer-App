@@ -15,6 +15,7 @@ using System.Windows.Input;
 using System.ComponentModel;
 using System.Collections; // Needed for ICollectionView
 using System.Windows.Media; // Explicitly imported for Brush, Color, SolidColorBrush
+using System.Globalization; // Needed for DateTime parsing
 
 namespace Log_Analyzer_App
 {
@@ -86,6 +87,17 @@ namespace Log_Analyzer_App
         public static string SelectedFileForParsing { get; set; } = null;
         public static string OriginalFilePath { get; set; } = null; // Store original path for parsing reuse
 
+        // MODIFIED: Static properties for LOG GRID FILTER persistence (used by LogAnalyzerView)
+        public static DateTime? GridStartDate { get; set; }
+        public static DateTime? GridEndDate { get; set; }
+
+        // MODIFIED: Static properties for LOG GRID FILTER time text persistence
+        public static string GridStartTimeText { get; set; } = string.Empty;
+        public static string GridEndTimeText { get; set; } = string.Empty;
+
+        // NEW: Static property for the selected timestamp column (shared, as it depends on the loaded log file)
+        public static string SelectedTimestampField { get; set; }
+
         // NEW: Centralized pattern definition store
         public static LogPatternDefinition CurrentPatternDefinition { get; set; }
 
@@ -93,7 +105,6 @@ namespace Log_Analyzer_App
         public static LogPatternDefinition DefaultPatternDefinition = new LogPatternDefinition
         {
             Pattern = @"^\[(.*?)\]\s*(INFO|WARN|ERROR):\s*(.*)$",
-            Description = "Default Pattern: Captures [Timestamp], Level (INFO|WARN|ERROR), and Message.",
             FieldNames = new List<string> { "Timestamp", "Level", "Message" }
         };
 
@@ -104,6 +115,7 @@ namespace Log_Analyzer_App
         public static LogEntry ParsedFirstLine { get; set; } = new LogEntry();
 
         // MODIFIED: ObservableCollection for dynamic summary statistics binding
+        // These counts will still be filtered, but based on the Log Grid filter's state.
         public static ObservableCollection<CountItem> SummaryCounts { get; } = new ObservableCollection<CountItem>();
 
         // NEW: Static property to hold the *last used* field name for LogAnalyzerView
@@ -129,6 +141,8 @@ namespace Log_Analyzer_App
         {
             // Initialize the current pattern with the default one
             CurrentPatternDefinition = DefaultPatternDefinition;
+            // Initialize the default timestamp field (if one exists in the default pattern)
+            SelectedTimestampField = CurrentPatternDefinition.FieldNames.FirstOrDefault(name => name.Equals("Timestamp", StringComparison.OrdinalIgnoreCase)) ?? null;
         }
 
         /// <summary>
@@ -185,25 +199,224 @@ namespace Log_Analyzer_App
             return p;
         }
 
+        // --- NEW: Centralized Date/Time Parsing and Combining Helpers (Made public static) ---
+
+        /// <summary>
+        /// Helper to parse log timestamps, trying standard formats first, then the Apache format.
+        /// </summary>
+        /// <param name="timestampValue">The raw string from the log entry.</param>
+        /// <param name="logDateTime">Output parameter for the parsed DateTime.</param>
+        /// <returns>True if parsing was successful.</returns>
+        public static bool TryParseLogDateTime(string timestampValue, out DateTime logDateTime)
+        {
+            // 1. Try generic parsing (works for formats like YYYY-MM-DD HH:MM:SS)
+            if (DateTime.TryParse(timestampValue, out logDateTime))
+            {
+                return true;
+            }
+
+            // 2. Try the Apache Combined Log Format: [dd/MMM/yyyy:HH:mm:ss zzz]
+            // Note: We use CultureInfo.InvariantCulture as the month name (MMM) is English (Oct).
+            const string apacheFormat = "dd/MMM/yyyy:HH:mm:ss zzz";
+            // We need to strip the wrapping brackets first, as the pattern capture includes them.
+            string strippedValue = timestampValue.TrimStart('[').TrimEnd(']');
+
+            if (DateTime.TryParseExact(strippedValue, apacheFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out logDateTime))
+            {
+                return true;
+            }
+
+            // 3. Add any other specific formats here if required later.
+
+            logDateTime = default;
+            return false;
+        }
+
+        /// <summary>
+        /// Combines a nullable date and a time string (HH:MM) into a single nullable DateTime.
+        /// If date is null, returns null. If time is blank, it defaults to midnight (00:00:00).
+        /// If time is invalid, returns null.
+        /// </summary>
+        /// <param name="date">The date part.</param>
+        /// <param name="timeText">The time string (e.g., "14:30").</param>
+        /// <returns>Combined DateTime? or null.</returns>
+        public static DateTime? CombineDateTime(DateTime? date, string timeText)
+        {
+            if (!date.HasValue)
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(timeText))
+            {
+                // NEW BEHAVIOR: If time is blank, default to midnight (00:00:00)
+                return date.Value.Date;
+            }
+
+            // Use the most flexible TryParseExact for HH:mm and HH:mm:ss
+            if (DateTime.TryParseExact(timeText.Trim(), new string[] { "H:m", "HH:mm", "H:m:s", "HH:mm:ss" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime timeOnly))
+            {
+                // Combine the date part with the parsed time part
+                return date.Value.Date.Add(timeOnly.TimeOfDay);
+            }
+
+            // Time text was present but invalid
+            return null;
+        }
+
+        // --- End Centralized Date/Time Parsing and Combining Helpers ---
+
+
+        // --- LOG GRID FILTERING (Using Grid-prefixed static properties) ---
+
+        /// <summary>
+        /// Filters the master log collection by the currently set log grid date/time and timestamp field.
+        /// </summary>
+        /// <returns>An IEnumerable<LogEntry> containing the filtered logs.</returns>
+        public static IEnumerable<LogEntry> GetLogGridFilteredEntries()
+        {
+            if (!LogEntries.Any())
+            {
+                return Enumerable.Empty<LogEntry>();
+            }
+
+            // Use Grid-prefixed static filter values
+            DateTime? filterStart = CombineDateTime(GridStartDate, GridStartTimeText);
+            DateTime? filterEnd = CombineDateTime(GridEndDate, GridEndTimeText);
+
+            // Handle the case where EndDate is set, but EndTime is empty (make range inclusive of the whole day)
+            if (GridEndDate.HasValue && string.IsNullOrWhiteSpace(GridEndTimeText) && filterEnd.HasValue)
+            {
+                filterEnd = GridEndDate.Value.Date.AddDays(1).AddTicks(-1);
+            }
+
+            string timestampFieldName = SelectedTimestampField;
+
+            // If no filters are applied, return all entries
+            if (!filterStart.HasValue && !filterEnd.HasValue)
+            {
+                return LogEntries;
+            }
+
+            // If a timestamp field is not selected but filters are applied, we return no entries
+            if (string.IsNullOrEmpty(timestampFieldName))
+            {
+                return Enumerable.Empty<LogEntry>();
+            }
+
+            return LogEntries.Where(logEntry =>
+            {
+                // Try to get and parse the timestamp value
+                if (logEntry.Fields.TryGetValue(timestampFieldName, out string timestampValue) &&
+                    TryParseLogDateTime(timestampValue, out DateTime logDateTime))
+                {
+                    bool match = true;
+
+                    // Check start boundary
+                    if (filterStart.HasValue && logDateTime < filterStart.Value)
+                    {
+                        match = false;
+                    }
+
+                    // Check end boundary (inclusive)
+                    if (filterEnd.HasValue && logDateTime > filterEnd.Value)
+                    {
+                        match = false;
+                    }
+
+                    return match;
+                }
+
+                // If parsing fails or the field is missing, exclude the log entry 
+                // only if filters are actively set
+                return false;
+            });
+        }
+
+        // --- END LOG GRID FILTERING ---
+
 
         /// <summary>
         /// NEW: Calculates the count for all unique values in a specific field, returning a new collection.
         /// This is used by the ChartViewer for independent analysis.
         /// </summary>
         /// <param name="statsFieldName">The name of the column/field to group by.</param>
+        /// <param name="startDate">The chart's start date filter.</param>
+        /// <param name="endDate">The chart's end date filter.</param>
+        /// <param name="startTimeText">The chart's start time text.</param>
+        /// <param name="endTimeText">The chart's end time text.</param>
         /// <returns>A new ObservableCollection<CountItem> representing the counts.</returns>
-        public static ObservableCollection<CountItem> GetDynamicSummaryCounts(string statsFieldName)
+        public static ObservableCollection<CountItem> GetDynamicSummaryCounts(string statsFieldName,
+            DateTime? startDate = null, DateTime? endDate = null, string startTimeText = null, string endTimeText = null)
         {
             var dynamicCounts = new ObservableCollection<CountItem>();
             string fieldName = statsFieldName;
 
-            if (!LogEntries.Any() || string.IsNullOrEmpty(fieldName))
+            if (string.IsNullOrEmpty(fieldName))
+            {
+                return dynamicCounts;
+            }
+
+            // --- Determine the Source Data ---
+            IEnumerable<LogEntry> sourceEntries;
+
+            // If the filter arguments are NULL (used by LogAnalyzerView for its SummaryCounts)
+            // This is the filter used for the LogAnalyzerView Summary Card.
+            if (!startDate.HasValue && !endDate.HasValue && string.IsNullOrEmpty(startTimeText) && string.IsNullOrEmpty(endTimeText))
+            {
+                // Use the filtered data from the main grid view (which has its own filter applied)
+                sourceEntries = GetLogGridFilteredEntries();
+            }
+            else
+            {
+                // Use a temporary filter for the ChartViewer's unique filter settings
+
+                DateTime? chartFilterStart = CombineDateTime(startDate, startTimeText);
+                DateTime? chartFilterEnd = CombineDateTime(endDate, endTimeText);
+
+                if (endDate.HasValue && string.IsNullOrWhiteSpace(endTimeText) && chartFilterEnd.HasValue)
+                {
+                    chartFilterEnd = endDate.Value.Date.AddDays(1).AddTicks(-1);
+                }
+
+                string timestampFieldName = SelectedTimestampField;
+
+                // If filters are set but no timestamp field, return empty
+                if (string.IsNullOrEmpty(timestampFieldName) && (chartFilterStart.HasValue || chartFilterEnd.HasValue))
+                {
+                    return dynamicCounts;
+                }
+
+                // Apply Chart-specific filter
+                sourceEntries = LogEntries.Where(logEntry =>
+                {
+                    // Check if chart filter is enabled
+                    if (!chartFilterStart.HasValue && !chartFilterEnd.HasValue) return true;
+
+                    // Apply date filter
+                    if (logEntry.Fields.TryGetValue(timestampFieldName, out string timestampValue) &&
+                        TryParseLogDateTime(timestampValue, out DateTime logDateTime))
+                    {
+                        bool match = true;
+                        if (chartFilterStart.HasValue && logDateTime < chartFilterStart.Value) match = false;
+                        if (chartFilterEnd.HasValue && logDateTime > chartFilterEnd.Value) match = false;
+                        return match;
+                    }
+
+                    // Fail if field is missing or unparseable and a chart filter is active
+                    return false;
+                });
+            }
+            // --- End Source Data Determination ---
+
+
+            if (!sourceEntries.Any())
             {
                 return dynamicCounts;
             }
 
             // Group by the value of the identified statistics field
-            var counts = LogEntries
+            var counts = sourceEntries
                 // Safely try to get the field's value
                 .Where(e => e.Fields.ContainsKey(fieldName))
                 .Select(e => e.Fields[fieldName].Trim())
@@ -259,7 +472,7 @@ namespace Log_Analyzer_App
             // Clear the existing observable collection
             SummaryCounts.Clear();
 
-            if (!LogEntries.Any() || string.IsNullOrEmpty(fieldName))
+            if (string.IsNullOrEmpty(fieldName))
             {
                 return;
             }
@@ -267,7 +480,9 @@ namespace Log_Analyzer_App
             // Update the last used field name
             LastStatsFieldName = fieldName;
 
-            // Get dynamic counts for the determined field
+            // Get dynamic counts for the determined field (which now uses the date filter)
+            // CRITICAL: We call the main GetDynamicSummaryCounts *without* date/time arguments, 
+            // forcing it to use the shared Log Grid Filter.
             var newCounts = GetDynamicSummaryCounts(fieldName);
 
             // Populate the static collection
@@ -310,6 +525,88 @@ namespace Log_Analyzer_App
 
         // NEW: Observable collection to hold the Column Visibility Models
         public ObservableCollection<ColumnModel> ColumnControls { get; set; } = new ObservableCollection<ColumnModel>();
+
+        // --- Time Range Text Binding Properties (MODIFIED to use Grid-prefixed properties) ---
+        private string _startTimeText = LogDataStore.GridStartTimeText;
+        public string StartTimeText
+        {
+            get => _startTimeText;
+            set
+            {
+                if (_startTimeText != value)
+                {
+                    _startTimeText = value;
+                    LogDataStore.GridStartTimeText = value; // Store in Grid-prefixed static property
+                    OnPropertyChanged(nameof(StartTimeText));
+                    // CRITICAL: Refresh filter when time text changes
+                    LogCollectionViewSource.View.Refresh();
+                }
+            }
+        }
+
+        private string _endTimeText = LogDataStore.GridEndTimeText;
+        public string EndTimeText
+        {
+            get => _endTimeText;
+            set
+            {
+                if (_endTimeText != value)
+                {
+                    _endTimeText = value;
+                    LogDataStore.GridEndTimeText = value; // Store in Grid-prefixed static property
+                    OnPropertyChanged(nameof(EndTimeText));
+                    // CRITICAL: Refresh filter when time text changes
+                    LogCollectionViewSource.View.Refresh();
+                }
+            }
+        }
+
+        // NEW: Properties for DatePicker binding (MODIFIED to use Grid-prefixed properties)
+        public DateTime? StartDate
+        {
+            get => LogDataStore.GridStartDate;
+            set
+            {
+                if (LogDataStore.GridStartDate != value)
+                {
+                    LogDataStore.GridStartDate = value; // Store in Grid-prefixed static property
+                    OnPropertyChanged(nameof(StartDate));
+                    // CRITICAL: Refresh filter when date changes (XAML calls DateRange_SelectedDateChanged anyway)
+                }
+            }
+        }
+
+        public DateTime? EndDate
+        {
+            get => LogDataStore.GridEndDate;
+            set
+            {
+                if (LogDataStore.GridEndDate != value)
+                {
+                    LogDataStore.GridEndDate = value; // Store in Grid-prefixed static property
+                    OnPropertyChanged(nameof(EndDate));
+                    // CRITICAL: Refresh filter when date changes (XAML calls DateRange_SelectedDateChanged anyway)
+                }
+            }
+        }
+
+        // NEW: Property for the Selected Timestamp Field (bound to the new ComboBox)
+        public string SelectedTimestampField
+        {
+            get => LogDataStore.SelectedTimestampField;
+            set
+            {
+                if (LogDataStore.SelectedTimestampField != value)
+                {
+                    LogDataStore.SelectedTimestampField = value;
+                    // When the field changes, recalculate the default date range and refresh the filter
+                    SetInitialDateRange(_logEntries);
+                    LogCollectionViewSource.View.Refresh();
+                    OnPropertyChanged(nameof(SelectedTimestampField));
+                }
+            }
+        }
+
 
         // FIX: Non-static class to hold preview binding data and implement INotifyPropertyChanged
         public class LogPreviewModel : INotifyPropertyChanged
@@ -386,8 +683,10 @@ namespace Log_Analyzer_App
                 if (_selectedStatsField != value)
                 {
                     _selectedStatsField = value;
-                    LogDataStore.CalculateSummaryCounts(value); // Trigger calculation with the new field
-                    OnPropertyChanged(nameof(SummaryCounts)); // Force UI refresh on the ItemsControl
+                    // CRITICAL: Calculate counts using the new field and the applied date filter
+                    // This uses the implicitly filtered data from LogDataStore.GetDynamicSummaryCounts
+                    LogDataStore.CalculateSummaryCounts(value);
+                    OnPropertyChanged(nameof(SummaryCounts));
                     OnPropertyChanged(nameof(SelectedStatsField));
                 }
             }
@@ -419,14 +718,20 @@ namespace Log_Analyzer_App
             {
                 InitializeColumnControls(LogDataStore.CurrentPatternDefinition.FieldNames);
                 SetupDynamicColumns();
+                // If data exists, ensure the timestamp field selection is updated
+                UpdateAvailableStatsFields(LogDataStore.CurrentPatternDefinition.FieldNames);
+                // Also set the initial date range based on the stored data and selected field
+                SetInitialDateRange(_logEntries);
+            }
+            else
+            {
+                // NEW: Initialize the field lists on startup even if no data exists yet (empty list)
+                UpdateAvailableStatsFields(LogDataStore.CurrentPatternDefinition.FieldNames);
             }
 
-            // NEW: Initialize the field lists on startup
-            UpdateAvailableStatsFields(LogDataStore.CurrentPatternDefinition.FieldNames);
 
             // Update UI with persistent data on initialization
             RefreshView();
-
             ShowParserStatus(false);
         }
 
@@ -440,7 +745,8 @@ namespace Log_Analyzer_App
             {
                 AvailableStatsFields.Add(fieldName);
             }
-            // If the last used field name is still available, select it, otherwise, default to the first field.
+
+            // --- Update SelectedStatsField (for Summary Card) ---
             if (fieldNames.Contains(LogDataStore.LastStatsFieldName))
             {
                 SelectedStatsField = LogDataStore.LastStatsFieldName;
@@ -454,6 +760,22 @@ namespace Log_Analyzer_App
             else
             {
                 SelectedStatsField = null; // No fields available
+            }
+
+            // --- Update SelectedTimestampField (for Date Filter) ---
+            if (fieldNames.Contains(LogDataStore.SelectedTimestampField))
+            {
+                // If the previously selected timestamp field is still available, keep it.
+                // NOTE: We don't use the property setter here to avoid immediate filter refresh; 
+                // the full load process handles the refresh.
+                LogDataStore.SelectedTimestampField = LogDataStore.SelectedTimestampField;
+            }
+            else
+            {
+                // Default to the field named 'Timestamp', 'DateTime', or the first field.
+                string defaultTimestampField = fieldNames.FirstOrDefault(name => name.Equals("Timestamp", StringComparison.OrdinalIgnoreCase) || name.Equals("DateTime", StringComparison.OrdinalIgnoreCase));
+                // Use the public property setter to ensure the filter UI is updated if the value changes.
+                SelectedTimestampField = defaultTimestampField ?? fieldNames.FirstOrDefault();
             }
         }
 
@@ -494,8 +816,7 @@ namespace Log_Analyzer_App
         }
 
         /// <summary>
-        /// Grep-like search implementation. Filters the collection based on keyword search.
-        /// (Date Range Filter has been removed as requested).
+        /// Grep-like search implementation. Filters the collection based on keyword search AND date range.
         /// </summary>
         private void LogFilter(object sender, FilterEventArgs e)
         {
@@ -505,7 +826,27 @@ namespace Log_Analyzer_App
                 return;
             }
 
-            // --- 1. Keyword (Grep) Filter ---
+            // --- 1. Date/Time Range Filter ---
+            // The actual filtering logic is now centralized in LogDataStore.GetLogGridFilteredEntries.
+            // We can determine acceptance by checking if the logEntry exists in the result of that function.
+
+            // NOTE: This check might be slow for massive logs as it iterates the list, but for simplicity
+            // and consistency with the ChartViewer's filtering logic, we rely on the centralized helper here.
+
+            // We iterate over the results of the filtered list to check if the current log entry is included.
+            bool dateMatch = LogDataStore.GetLogGridFilteredEntries().Contains(logEntry);
+
+            // If the date filter failed, we stop here.
+            if (!dateMatch)
+            {
+                e.Accepted = false;
+                return;
+            }
+
+
+            // --- 2. Keyword (Grep) Filter ---
+            // (Keyword filter remains local to the grid view)
+
             string searchTerm = SearchTextBox.Text.Trim();
             bool isInverted = InvertFilterCheckBox.IsChecked ?? false;
 
@@ -558,8 +899,9 @@ namespace Log_Analyzer_App
             }
 
             // --- Final Acceptance Logic ---
-            // If inverted, accept if there was NO match.
-            // If not inverted, accept if there WAS a match.
+            // If inverted, accept if there was NO keyword match.
+            // If not inverted, accept if there WAS a keyword match.
+            // Since we already filtered by date, we just check the keyword match condition.
             e.Accepted = isInverted ? !keywordMatch : keywordMatch;
         }
 
@@ -578,6 +920,33 @@ namespace Log_Analyzer_App
         }
 
         /// <summary>
+        /// NEW: Event handler for the DatePicker change.
+        /// </summary>
+        private void DateRange_SelectedDateChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // CRITICAL: Refresh filter when date changes AND recalculate summary stats for the current field
+            if (LogCollectionViewSource?.View != null)
+            {
+                LogCollectionViewSource.View.Refresh();
+                LogDataStore.CalculateSummaryCounts(SelectedStatsField);
+            }
+        }
+
+        /// <summary>
+        /// NEW: Event handler for the Time TextBoxes.
+        /// </summary>
+        private void TimeRange_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            // CRITICAL: Refresh filter when time text changes AND recalculate summary stats for the current field
+            if (LogCollectionViewSource?.View != null)
+            {
+                LogCollectionViewSource.View.Refresh();
+                LogDataStore.CalculateSummaryCounts(SelectedStatsField);
+            }
+        }
+
+
+        /// <summary>
         /// NEW: Event handler for the InvertFilterCheckBox.
         /// </summary>
         private void InvertFilter_CheckedOrUnchecked(object sender, RoutedEventArgs e)
@@ -588,8 +957,6 @@ namespace Log_Analyzer_App
                 LogCollectionViewSource.View.Refresh();
             }
         }
-
-        // Removed: DateRange_SelectedDateChanged handler (as requested)
 
 
         /// <summary>
@@ -923,6 +1290,10 @@ namespace Log_Analyzer_App
                     _logEntries.Add(entry);
                 }
 
+                // NEW: Set the initial date filter range to the min/max dates found in the data
+                // This now uses LogDataStore.SelectedTimestampField
+                SetInitialDateRange(_logEntries);
+
                 // 4. Update persistent data and calculate counts
                 // Calculate SummaryCounts using the currently selected field in this view
                 LogDataStore.CalculateSummaryCounts(SelectedStatsField);
@@ -969,6 +1340,51 @@ namespace Log_Analyzer_App
                 LoadFileButton.IsEnabled = true; // Re-enable Load button
             }
         }
+
+        /// <summary>
+        /// NEW: Sets the initial Start and End Date filter values based on the data's timestamp range 
+        /// using the currently selected timestamp field.
+        /// </summary>
+        private void SetInitialDateRange(ObservableCollection<LogEntry> entries)
+        {
+            // Update Log Grid filters
+            LogDataStore.GridStartDate = null;
+            LogDataStore.GridEndDate = null;
+
+            // We do *not* update the time text here, as they default to empty string,
+            // relying on CombineDateTime to default to 00:00:00.
+
+            OnPropertyChanged(nameof(StartTimeText));
+            OnPropertyChanged(nameof(EndTimeText));
+
+            if (!entries.Any()) return;
+
+            // Use the currently selected timestamp field
+            string timestampFieldName = LogDataStore.SelectedTimestampField;
+
+            if (string.IsNullOrEmpty(timestampFieldName)) return;
+
+            // Collect all successfully parsed dates from the selected column
+            var validDates = entries
+                .Where(e => e.Fields.ContainsKey(timestampFieldName))
+                .Select(e => e.Fields[timestampFieldName])
+                // Use the new TryParseLogDateTime helper
+                .Where(v => LogDataStore.TryParseLogDateTime(v, out DateTime _))
+                .Select(v => { LogDataStore.TryParseLogDateTime(v, out DateTime dt); return dt; })
+                .ToList();
+
+            if (validDates.Any())
+            {
+                // Get the date part of the earliest and latest entry
+                LogDataStore.GridStartDate = validDates.Min().Date;
+                LogDataStore.GridEndDate = validDates.Max().Date;
+
+                // Notify the UI to update the DatePicker controls
+                OnPropertyChanged(nameof(StartDate));
+                OnPropertyChanged(nameof(EndDate));
+            }
+        }
+
 
         /// <summary>
         /// Executes the external Python parser script for both 'parse' and 'suggest_pattern' commands.
@@ -1020,9 +1436,10 @@ namespace Log_Analyzer_App
                 string fieldNamesJson = JsonSerializer.Serialize(fieldNames);
                 string escapedLogPattern = logPattern.Replace("\"", "\\\"");
                 string escapedFieldNamesJson = fieldNamesJson.Replace("\"", "\\\"");
-                string isBestEffortStr = isBestEffortParse ? "true" : "false";
+                string isBestEffortStr = isBestEffortParse ? "true" : "false"; // Correct variable name
 
                 // CRITICAL FIX: Prepend the script path and append the new isBestEffort flag
+                // Corrected the variable name in the argument string from 'isBestEffetrtStr' to 'isBestEffortStr'
                 arguments = $"{scriptPath} {command} \"{filePath}\" \"{escapedLogPattern}\" \"{escapedFieldNamesJson}\" {isBestEffortStr}";
             }
             // NEW command name and logic: passing file path for robust suggestion

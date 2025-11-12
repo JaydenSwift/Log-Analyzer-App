@@ -116,6 +116,45 @@ namespace Log_Analyzer_App
             }
         }
 
+        // --- NEW: Chart-Specific Filter Properties ---
+
+        // CRITICAL: Removed UpdateAllCharts from setters
+        private DateTime? _chartStartDate;
+        public DateTime? ChartStartDate
+        {
+            get => _chartStartDate;
+            set { _chartStartDate = value; OnPropertyChanged(nameof(ChartStartDate)); }
+        }
+
+        private DateTime? _chartEndDate;
+        public DateTime? ChartEndDate
+        {
+            get => _chartEndDate;
+            set { _chartEndDate = value; OnPropertyChanged(nameof(ChartEndDate)); }
+        }
+
+        private string _chartStartTimeText = string.Empty;
+        public string ChartStartTimeText
+        {
+            get => _chartStartTimeText;
+            set { _chartStartTimeText = value; OnPropertyChanged(nameof(ChartStartTimeText)); }
+        }
+
+        private string _chartEndTimeText = string.Empty;
+        public string ChartEndTimeText
+        {
+            get => _chartEndTimeText;
+            set { _chartEndTimeText = value; OnPropertyChanged(nameof(ChartEndTimeText)); }
+        }
+
+        // NEW: Property for displaying the filtered log count
+        private int _filteredLogCount = 0;
+        public int FilteredLogCount
+        {
+            get => _filteredLogCount;
+            set { _filteredLogCount = value; OnPropertyChanged(nameof(FilteredLogCount)); }
+        }
+
         // --- Constructor ---
         public ChartViewer()
         {
@@ -124,7 +163,58 @@ namespace Log_Analyzer_App
 
             // Load all necessary data when the viewer is first loaded or navigated to
             this.Loaded += ChartViewer_Loaded;
+
+            // Set initial date range (full range of the loaded data)
+            SetInitialDateRange();
         }
+
+        /// <summary>
+        /// NEW: Handles the click of the "Apply Filter" button.
+        /// </summary>
+        private void ApplyChartFilter_Click(object sender, RoutedEventArgs e)
+        {
+            // This is the single point where the filter is applied and charts are updated
+            UpdateAllCharts();
+        }
+
+        /// <summary>
+        /// NEW: Sets the initial Start and End Date filter values based on the data's timestamp range 
+        /// using the currently selected timestamp field.
+        /// </summary>
+        private void SetInitialDateRange()
+        {
+            // Reset Chart filter properties
+            _chartStartDate = null;
+            _chartEndDate = null;
+            _chartStartTimeText = string.Empty;
+            _chartEndTimeText = string.Empty;
+
+            var entries = LogDataStore.LogEntries;
+            if (!entries.Any() || string.IsNullOrEmpty(LogDataStore.SelectedTimestampField)) return;
+
+            string timestampFieldName = LogDataStore.SelectedTimestampField;
+
+            // Collect all successfully parsed dates from the selected column
+            var validDates = entries
+                .Where(e => e.Fields.ContainsKey(timestampFieldName))
+                .Select(e => e.Fields[timestampFieldName])
+                // Use the shared TryParseLogDateTime helper
+                .Where(v => LogDataStore.TryParseLogDateTime(v, out DateTime _))
+                .Select(v => { LogDataStore.TryParseLogDateTime(v, out DateTime dt); return dt; })
+                .ToList();
+
+            if (validDates.Any())
+            {
+                // Get the date part of the earliest and latest entry
+                _chartStartDate = validDates.Min().Date;
+                _chartEndDate = validDates.Max().Date;
+
+                // Manually notify property change since direct assignment was used
+                OnPropertyChanged(nameof(ChartStartDate));
+                OnPropertyChanged(nameof(ChartEndDate));
+            }
+        }
+
 
         /// <summary>
         /// Handles the Loaded event to ensure LogDataStore is populated before initializing charts.
@@ -172,17 +262,17 @@ namespace Log_Analyzer_App
             // 2. Collections are initialized at property declaration. We skip re-initialization here.
 
             // 3. Update charts immediately based on the initialized SelectedStatsField
-            // This is called *after* SelectedStatsField is set in InitializeAvailableStatsFields.
+            // CRITICAL: We call ApplyChartFilter_Click here to ensure initial load runs through the new manual process
             if (SelectedStatsField != null)
             {
-                UpdateAllCharts();
+                ApplyChartFilter_Click(null, null);
             }
         }
 
         /// <summary>
         /// NEW: Centralized update method to fetch data and refresh both charts based on SelectedStatsField.
         /// </summary>
-        private void UpdateAllCharts()
+        public void UpdateAllCharts()
         {
             if (string.IsNullOrEmpty(SelectedStatsField))
             {
@@ -190,11 +280,22 @@ namespace Log_Analyzer_App
                 PieSeriesCollection.Clear();
                 Labels = new string[0];
                 BarChartLegendItems.Clear();
+                FilteredLogCount = 0; // Reset count on clear
                 return;
             }
 
-            // Fetch dynamic counts based on the currently selected field using the LogDataStore method
-            ObservableCollection<CountItem> dynamicLogData = LogDataStore.GetDynamicSummaryCounts(SelectedStatsField);
+            // Fetch dynamic counts based on the currently selected field using the LogDataStore method.
+            // CRITICAL: Pass the chart's local filter properties to the centralized calculation function.
+            ObservableCollection<CountItem> dynamicLogData = LogDataStore.GetDynamicSummaryCounts(
+                SelectedStatsField,
+                ChartStartDate,
+                ChartEndDate,
+                ChartStartTimeText,
+                ChartEndTimeText
+            );
+
+            // Calculate the total number of filtered logs represented in the counts
+            FilteredLogCount = (int)dynamicLogData.Sum(c => c.Count);
 
             // 1. Labels property is now redundant for X-Axis but kept for compatibility/debug
             Labels = dynamicLogData.Select(c => c.Key).ToArray();
@@ -329,7 +430,14 @@ namespace Log_Analyzer_App
             if (!IsLoaded) return;
 
             // Recalculate only the pie chart labels
-            ObservableCollection<CountItem> dynamicLogData = LogDataStore.GetDynamicSummaryCounts(SelectedStatsField);
+            // CRITICAL: Fetch data *again* to ensure it uses the latest filtered count
+            ObservableCollection<CountItem> dynamicLogData = LogDataStore.GetDynamicSummaryCounts(
+                SelectedStatsField,
+                ChartStartDate,
+                ChartEndDate,
+                ChartStartTimeText,
+                ChartEndTimeText
+            );
             UpdatePieChart(dynamicLogData, SliceThresholdSlider.Value);
         }
 
@@ -345,7 +453,14 @@ namespace Log_Analyzer_App
             SlicePercentageText.Text = $"Minimum Slice Percentage ({e.NewValue:N0}%)";
 
             // Re-run the pie chart update with the new threshold
-            ObservableCollection<CountItem> dynamicLogData = LogDataStore.GetDynamicSummaryCounts(SelectedStatsField);
+            // CRITICAL: Fetch data *again* to ensure it uses the latest filtered count
+            ObservableCollection<CountItem> dynamicLogData = LogDataStore.GetDynamicSummaryCounts(
+                SelectedStatsField,
+                ChartStartDate,
+                ChartEndDate,
+                ChartStartTimeText,
+                ChartEndTimeText
+            );
             UpdatePieChart(dynamicLogData, e.NewValue);
         }
 

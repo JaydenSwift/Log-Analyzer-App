@@ -34,17 +34,104 @@
     <Grid Background="{DynamicResource MaterialDesignPaper}" Margin="20">
         <StackPanel Margin="20">
             <TextBlock Text="Log Event Distribution Analysis" FontSize="32" FontWeight="Bold" Margin="0 0 0 10" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryHueMidBrush}"/>
-            
 
-            <!-- Chart Grouping Dropdown -->
-            <ComboBox materialDesign:HintAssist.Hint="Group Chart Data by Column"
-                      ItemsSource="{Binding AvailableStatsFields}"
-                      SelectedItem="{Binding SelectedStatsField, Mode=TwoWay}"
-                      HorizontalAlignment="Center"
-                      Width="300"
-                      Margin="0 0 0 20"
-                      />
-            <!-- END Chart Grouping Dropdown -->
+            <!-- Chart Filter Controls -->
+            <materialDesign:Card UniformCornerRadius="10" Padding="15" Margin="0 0 0 20">
+                <StackPanel>
+                    <Grid Margin="0 0 0 15">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0" Text="Chart Filtering" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Left" Foreground="{DynamicResource PrimaryHueMidBrush}"/>
+
+                        <!-- NEW: Displayed Log Lines Count Display -->
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="10 0 0 0">
+                            <TextBlock Text="Displayed Log Lines:" Opacity="0.8" VerticalAlignment="Center" Margin="0 0 5 0"/>
+                            <materialDesign:Badged Content="{Binding FilteredLogCount}" 
+                                                   BadgeBackground="{DynamicResource MaterialDesignLightTealAccentBrush}" 
+                                                   BadgeForeground="White"
+                                                   VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Filter Inputs and Apply Button -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Chart Grouping Dropdown (Left Column) -->
+                        <ComboBox materialDesign:HintAssist.Hint="Group Chart Data by Column"
+                                  ItemsSource="{Binding AvailableStatsFields}"
+                                  SelectedItem="{Binding SelectedStatsField, Mode=TwoWay}"
+                                  Grid.Column="0"
+                                  Margin="0 0 10 0"/>
+
+                        <!-- Date Pickers (Center Column) -->
+                        <StackPanel Grid.Column="1" Margin="5 0">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="5"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Start Date -->
+                                <DatePicker Grid.Column="0" 
+                                            materialDesign:HintAssist.Hint="Start Date"
+                                            SelectedDate="{Binding ChartStartDate, Mode=TwoWay}"/>
+
+                                <TextBlock Grid.Column="1" Text="-" VerticalAlignment="Center" HorizontalAlignment="Center" Opacity="0.5"/>
+
+                                <!-- End Date -->
+                                <DatePicker Grid.Column="2" 
+                                            materialDesign:HintAssist.Hint=" End Date"
+                                            SelectedDate="{Binding ChartEndDate, Mode=TwoWay}"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Time Pickers (Right Column) -->
+                        <StackPanel Grid.Column="2" Margin="10 0">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="5"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Start Time -->
+                                <TextBox Grid.Column="0" 
+                                         materialDesign:HintAssist.Hint="Start Time (HH:MM)"
+                                         Text="{Binding ChartStartTimeText}"/>
+
+                                <TextBlock Grid.Column="1" Text="-" VerticalAlignment="Center" HorizontalAlignment="Center" Opacity="0.5"/>
+
+                                <!-- End Time -->
+                                <TextBox Grid.Column="2" 
+                                         materialDesign:HintAssist.Hint=" End Time (HH:MM)"
+                                         Text="{Binding ChartEndTimeText}"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- FIX: Changed style to the standard MaterialDesignRaisedButton and applied an accent background -->
+                        <Button Grid.Column="3"
+                                Content="APPLY FILTER"
+                                Style="{StaticResource MaterialDesignRaisedButton}"
+                                Background="{DynamicResource SecondaryHueMidBrush}"
+                                Foreground="{DynamicResource MaterialDesignBody}"
+                                materialDesign:ButtonAssist.CornerRadius="5"
+                                Click="ApplyChartFilter_Click"
+                                Margin="10 0 0 0"
+                                VerticalAlignment="Center"/>
+                    </Grid>
+                </StackPanel>
+            </materialDesign:Card>
+            <!-- END Chart Filter Controls -->
 
             <materialDesign:Card UniformCornerRadius="10" Padding="15" Height="650">
                 <Grid>
