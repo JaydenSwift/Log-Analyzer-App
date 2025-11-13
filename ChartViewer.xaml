@@ -31,11 +31,12 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid Background="{DynamicResource MaterialDesignPaper}" Margin="20">
+    <!-- FIX: Applied TextElement.Foreground to the root container Grid -->
+    <Grid Background="{DynamicResource MaterialDesignPaper}" Margin="20" TextElement.Foreground="{DynamicResource MaterialDesignBody}">
         <!-- Wrap the main content StackPanel in a ScrollViewer -->
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="20">
-                <TextBlock Text="Log Event Distribution Analysis" FontSize="32" FontWeight="Bold" Margin="0 0 0 10" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryHueMidBrush}"/>
+                <TextBlock Text="Log Event Distribution Analysis" FontSize="32" FontWeight="Bold" Margin="0 0 0 10" HorizontalAlignment="Center" Foreground="{DynamicResource MaterialDesignBody}"/>
 
                 <!-- Chart Filter Controls -->
                 <materialDesign:Card UniformCornerRadius="10" Padding="15" Margin="0 0 0 20">
@@ -46,7 +47,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
-                            <TextBlock Grid.Column="0" Text="Chart Filtering" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Left" Foreground="{DynamicResource PrimaryHueMidBrush}"/>
+                            <TextBlock Grid.Column="0" Text="Chart Filtering" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Left" Foreground="{DynamicResource MaterialDesignBody}"/>
 
                             <!-- Displayed Log Lines Count Display -->
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="10 0 0 0">
@@ -226,8 +227,8 @@
                                     <!-- Label Display Style -->
                                     <TextBlock Text="Slice Label Content:" Opacity="0.8" Margin="0 0 0 5"/>
                                     <StackPanel Orientation="Horizontal" Margin="0 0 0 10">
-                                        <RadioButton x:Name="PercentRadio" Content="Percentage Only" IsChecked="True" GroupName="PieLabel" Margin="0 0 15 0" Foreground="{StaticResource MaterialDesignBody}" Checked="PieLabelMode_Changed"/>
-                                        <RadioButton x:Name="RawCountRadio" Content="Raw Count" GroupName="PieLabel" Foreground="{StaticResource MaterialDesignBody}" Checked="PieLabelMode_Changed"/>
+                                        <RadioButton x:Name="PercentRadio" Content="Percentage Only" IsChecked="True" GroupName="PieLabel" Margin="0 0 15 0" Foreground="{DynamicResource MaterialDesignBody}" Checked="PieLabelMode_Changed"/>
+                                        <RadioButton x:Name="RawCountRadio" Content="Raw Count" GroupName="PieLabel" Foreground="{DynamicResource MaterialDesignBody}" Checked="PieLabelMode_Changed"/>
                                     </StackPanel>
 
                                     <!-- Minimum Threshold Slider -->
@@ -242,7 +243,7 @@
                 <!-- NEW: Time Series Chart Area (Full Width) -->
                 <materialDesign:Card UniformCornerRadius="10" Padding="15" Margin="0 20 0 0">
                     <StackPanel>
-                        <TextBlock Text="Event Trend Over Time" FontSize="18" FontWeight="SemiBold" Margin="0 0 0 15" HorizontalAlignment="Center" Foreground="{DynamicResource PrimaryHueMidBrush}"/>
+                        <TextBlock Text="Event Trend Over Time" FontSize="18" FontWeight="SemiBold" Margin="0 0 0 15" HorizontalAlignment="Center" Foreground="{DynamicResource MaterialDesignBody}"/>
 
                         <!-- Dropdown for Time Range Selection -->
                         <ComboBox materialDesign:HintAssist.Hint="Group by Time Range"

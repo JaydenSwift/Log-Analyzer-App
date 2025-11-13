@@ -54,7 +54,7 @@
                 </Grid.Resources>
 
                 <!-- Sidebar Grid (Column 0) -->
-                <Grid Grid.Column="0" Background="{StaticResource MaterialDesignPaper}">
+                <Grid Grid.Column="0" Background="{DynamicResource MaterialDesignPaper}">
 
                     <!-- The ListView handles the selection state which we use for navigation -->
                     <ListView x:Name="SidebarMenu" Margin="0 20" SelectionChanged="SidebarMenu_SelectionChanged">
@@ -77,13 +77,14 @@
                         <!-- Exit Button (Special Case - Now the ListViewItem itself is clickable and handles the selection logic) -->
                         <!-- FIX: Removed nested Button and moved the icon directly into the ListViewItem content to make the whole item clickable. -->
                         <ListViewItem Margin="0 15" IsSelected="False" Tag="Exit" ToolTip="Exit Application">
-                            <materialDesign:PackIcon Kind="ExitToApp" Foreground="Black"/>
+                            <materialDesign:PackIcon Kind="ExitToApp" Foreground="{DynamicResource MaterialDesignBody}"/> 
                         </ListViewItem>
                     </ListView>
                 </Grid>
 
                 <!-- Content Area -->
-                <Grid Grid.Column="1" Background="White" x:Name="RenderPages">
+                <!-- FIX: Changed Background from static "White" to dynamic "MaterialDesignBackground" -->
+                <Grid Grid.Column="1" Background="{DynamicResource MaterialDesignBackground}" x:Name="RenderPages">
                     <!-- Views will be dynamically loaded here -->
                 </Grid>
             </Grid>
