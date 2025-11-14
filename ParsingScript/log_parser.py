@@ -22,9 +22,11 @@ def extract_field_names(pattern: str) -> list:
 
 # --- Pattern Suggestion Data Loader ---
 
-def load_patterns():
+def load_patterns(custom_path: str = None):
     """
-    Loads COMMON_LOG_PATTERNS from the external patterns.json file.
+    Loads COMMON_LOG_PATTERNS from the patterns.json file.
+    If custom_path is provided and valid, it loads from there.
+    Otherwise, it loads from the default path relative to the script.
     It dynamically generates the 'field_names' list from the 'pattern' string.
     If loading fails, it returns a minimal pattern list.
     """
@@ -36,12 +38,18 @@ def load_patterns():
     # Add field_names dynamically to the fallback pattern
     MINIMAL_DEFAULT_PATTERN[0]["field_names"] = extract_field_names(MINIMAL_DEFAULT_PATTERN[0]["pattern"])
 
-
-    try:
-        # Get the directory of the *currently executing script file* regardless of the CWD.
+    # 1. Determine the path to use
+    if custom_path and os.path.exists(custom_path):
+        patterns_path = custom_path
+        print(f"INFO: Loading custom patterns from: {patterns_path}", file=sys.stderr)
+    else:
+        # Fallback to the default path (relative to the executing script, which is in the bin directory)
         script_dir = os.path.dirname(os.path.abspath(__file__))
         patterns_path = os.path.join(script_dir, "patterns.json")
-        
+        print(f"INFO: Loading default patterns from: {patterns_path}", file=sys.stderr)
+
+
+    try:
         if not os.path.exists(patterns_path):
             print(f"ERROR: patterns.json not found at expected path: {patterns_path}. Returning minimal default.", file=sys.stderr)
             return MINIMAL_DEFAULT_PATTERN
@@ -81,16 +89,22 @@ def load_patterns():
         return MINIMAL_DEFAULT_PATTERN
 
 
-# Load patterns once when the script starts
-COMMON_LOG_PATTERNS = load_patterns()
+# Global variable for patterns, set once after argument parsing in __main__
+global COMMON_LOG_PATTERNS
+COMMON_LOG_PATTERNS = []
 
 # --- Pattern Suggestion Logic (Uses parse.search) ---
+# NOTE: This function now relies on the COMMON_LOG_PATTERNS global variable being set
+# by the __main__ block before it is called.
 
 def suggest_robust_pattern(file_path):
     """
     Finds the best matching parse template by checking the first 
     ROBUST_CHECK_LINES of the log file using a scoring system.
     """
+    # Use the now-global COMMON_LOG_PATTERNS
+    global COMMON_LOG_PATTERNS 
+    
     if not COMMON_LOG_PATTERNS:
         # The fallback pattern already has field_names added in load_patterns
         return load_patterns()[0]
@@ -226,10 +240,6 @@ def parse_log_file(file_path, log_pattern, field_names: List[str], is_best_effor
                 # Since we want to use dynamically discovered fields, we must update 
                 # FieldOrder *if* the template resulted in fixed/unnamed fields not known to C#.
                 
-                # For simplicity and robust parsing, we fill the 'Fields' dictionary 
-                # with everything found. The C# client must be updated to use the 
-                # keys of the 'Fields' dictionary dynamically.
-                
                 # Use the C# required field names as a primary output set
                 output_field_names = expected_named_fields.copy()
                 
@@ -297,7 +307,10 @@ def parse_log_file(file_path, log_pattern, field_names: List[str], is_best_effor
             "error": f"An unexpected error occurred during parsing (Template Error?): {str(e)}"
         }
 
-# --- Main Entry Point (UNCHANGED) ---
+# --- Main Entry Point (MODIFIED) ---
+
+# Global variable for patterns, set once after argument parsing in __main__
+COMMON_LOG_PATTERNS = []
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -310,24 +323,32 @@ if __name__ == "__main__":
 
     command = sys.argv[1]
     
+    # --- Argument Validation & Custom Path Extraction ---
+    custom_patterns_path = None
+    
     if command == "parse":
+        # Expected minimum arguments: [script_path, command, file_path, log_pattern, field_names_json, is_best_effort]
         if len(sys.argv) < 6:
             error_output = json.dumps({
                 "success": False, 
-                "error": "Error: Missing arguments for 'parse'. (Requires: file_path, log_pattern, field_names_json, and is_best_effort)"
+                "error": "Error: Missing arguments for 'parse'. (Requires: file_path, log_pattern, field_names_json, is_best_effort, and custom_patterns_path)"
             })
             print(error_output)
             sys.exit(1)
-
+        
+        # The custom path is the optional last argument (index 6, if present)
+        custom_path_arg = sys.argv[6] if len(sys.argv) > 6 else "null"
+        if custom_path_arg != "null":
+            # Remove quotes from the path if present
+            custom_patterns_path = custom_path_arg.strip('"')
+            
         file_path = sys.argv[2]
         log_pattern = sys.argv[3]
         field_names_json = sys.argv[4]
-        # NEW: Read the best-effort flag (passed as "true" or "false" string)
         is_best_effort_str = sys.argv[5].lower()
         is_best_effort = is_best_effort_str == "true"
         
         try:
-            # We still need to receive this argument from C#
             field_names = json.loads(field_names_json)
         except json.JSONDecodeError:
             error_output = json.dumps({
@@ -336,20 +357,31 @@ if __name__ == "__main__":
             })
             print(error_output)
             sys.exit(1)
-
+            
+        # The 'parse' command does not require COMMON_LOG_PATTERNS (unless we want to reuse load_patterns for minimalist fallback)
+        # We skip loading patterns here as it's not strictly necessary for parsing a known pattern.
         result = parse_log_file(file_path, log_pattern, field_names, is_best_effort)
     
     elif command == "suggest_robust_pattern":
-        # NEW command implementation: takes the file path and returns the best pattern
+        # Expected minimum arguments: [script_path, command, file_path]
         if len(sys.argv) < 3:
             error_output = json.dumps({
                 "success": False, 
-                "error": "Error: Missing argument for 'suggest_robust_pattern'. (Requires: file_path)"
+                "error": "Error: Missing argument for 'suggest_robust_pattern'. (Requires: file_path and custom_patterns_path)"
             })
             print(error_output)
             sys.exit(1)
 
+        # The custom path is the optional last argument (index 3, if present)
+        custom_path_arg = sys.argv[3] if len(sys.argv) > 3 else "null"
+        if custom_path_arg != "null":
+            # Remove quotes from the path if present
+            custom_patterns_path = custom_path_arg.strip('"')
+            
         file_path = sys.argv[2]
+
+        # CRITICAL FIX: Add 'global COMMON_LOG_PATTERNS' here before the assignment.
+        COMMON_LOG_PATTERNS = load_patterns(custom_patterns_path)
         
         # Get the suggested pattern (which is a dictionary)
         suggested_def = suggest_robust_pattern(file_path)

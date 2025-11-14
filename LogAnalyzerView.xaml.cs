@@ -111,6 +111,10 @@ namespace Log_Analyzer_App
         // NEW: Centralized pattern definition store
         public static LogPatternDefinition CurrentPatternDefinition { get; set; }
 
+        // NEW: Static property to hold the user-selected path to a custom patterns.json file
+        public static string CustomPatternsFilePath { get; set; } = string.Empty;
+
+
         // Default pattern definition (now redundant as it's defined in Python, but kept as a fallback)
         public static LogPatternDefinition DefaultPatternDefinition = new LogPatternDefinition
         {
@@ -161,7 +165,7 @@ namespace Log_Analyzer_App
         /// </summary>
         private static System.Windows.Media.SolidColorBrush GetRandomBrush()
         {
-            // Generate random HSL colors and convert to RGB for better distribution of vivid colors
+            // Generate random HSL colors and convert to RGB for better color distribution of vivid colors
             // Use Saturation > 0.7 and Lightness around 0.5 to ensure it's not too pale or too dark.
             double hue = Rnd.NextDouble() * 360;
             double saturation = Rnd.NextDouble() * 0.3 + 0.7; // 0.7 to 1.0 (high saturation)
@@ -1715,6 +1719,12 @@ namespace Log_Analyzer_App
             string scriptPath = "C_log_parser.py";
             string arguments;
 
+            // NEW: Add the custom patterns file path to the arguments if it's set
+            string customPatternsPath = LogDataStore.CustomPatternsFilePath;
+            // Use 'null' string if empty, so Python can check for it
+            string customPathArg = string.IsNullOrWhiteSpace(customPatternsPath) ? "null" : $"\"{customPatternsPath}\"";
+
+
             // FIX: Explicitly include the scriptPath in the arguments for reliable execution.
             if (command == "parse")
             {
@@ -1724,16 +1734,15 @@ namespace Log_Analyzer_App
                 string escapedFieldNamesJson = fieldNamesJson.Replace("\"", "\\\"");
                 string isBestEffortStr = isBestEffortParse ? "true" : "false"; // Correct variable name
 
-                // CRITICAL FIX: Prepend the script path and append the new isBestEffort flag
-                // Corrected the variable name in the argument string from 'isBestEffetrtStr' to 'isBestEffortStr'
-                arguments = $"{scriptPath} {command} \"{filePath}\" \"{escapedLogPattern}\" \"{escapedFieldNamesJson}\" {isBestEffortStr}";
+                // MODIFIED: Added the custom path argument as the last parameter
+                arguments = $"{scriptPath} {command} \"{filePath}\" \"{escapedLogPattern}\" \"{escapedFieldNamesJson}\" {isBestEffortStr} {customPathArg}";
             }
             // NEW command name and logic: passing file path for robust suggestion
             else if (command == "suggest_robust_pattern")
             {
                 // For suggestion, we only need the file path
-                // CRITICAL FIX: Prepend the script path
-                arguments = $"{scriptPath} {command} \"{filePath}\"";
+                // MODIFIED: Added the custom path argument as the last parameter
+                arguments = $"{scriptPath} {command} \"{filePath}\" {customPathArg}";
             }
             else
             {
@@ -1847,6 +1856,7 @@ namespace Log_Analyzer_App
                 ExportButton.IsEnabled = false; // Disable export button during suggestion
 
                 // Run the Python suggester command, passing the full file path for robust checking
+                // CRITICAL: RunPythonParser now automatically includes LogDataStore.CustomPatternsFilePath
                 await Task.Run(() => RunPythonParser("suggest_robust_pattern", openFileDialog.FileName, null, null));
 
                 LoadFileButton.IsEnabled = true; // Re-enable button

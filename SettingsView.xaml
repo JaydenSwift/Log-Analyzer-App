@@ -18,7 +18,6 @@
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0 40 0 0" Width="400">
             <materialDesign:PackIcon Kind="Cog" Width="64" Height="64" HorizontalAlignment="Center" Foreground="{DynamicResource MaterialDesignBody}"/>
             <TextBlock Text="Application Settings" FontSize="32" FontWeight="Bold" Margin="0 10 0 25" HorizontalAlignment="Center"/>
-            <TextBlock Text="Configure file paths, parser options, and display preferences here." FontSize="16" HorizontalAlignment="Center" Opacity="0.7" Margin="0 0 0 40"/>
 
             <!-- Theme Settings Card -->
             <materialDesign:Card UniformCornerRadius="10" Padding="20" Margin="0 0 0 20">
@@ -50,9 +49,53 @@
                 </StackPanel>
             </materialDesign:Card>
 
-            <!-- Future Settings (Placeholder) -->
-            <materialDesign:Card UniformCornerRadius="10" Padding="20">
-                <TextBlock Text="Other Settings (Coming Soon...)" Opacity="0.5" FontSize="14" HorizontalAlignment="Center"/>
+            <!-- NEW: Pattern File Settings Card -->
+            <materialDesign:Card UniformCornerRadius="10" Padding="20" Margin="0 0 0 20">
+                <StackPanel>
+                    <TextBlock Text="Pattern Configuration" FontSize="18" FontWeight="SemiBold" Margin="0 0 0 15" Foreground="{DynamicResource MaterialDesignBody}"/>
+
+                    <StackPanel Margin="0 0 10 15">
+                        <TextBlock Text="Custom Pattern File (Any .json file)" FontWeight="SemiBold"/>
+                        <TextBlock Text="Upload a custom JSON file to override or extend the log pattern suggestions. Leave blank for default." Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Read-Only Textbox for Path -->
+                        <TextBox Grid.Column="0"
+                                 x:Name="CustomPathTextBox"
+                                 Text="{Binding CustomPatternsFilePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 materialDesign:HintAssist.Hint="Default (Internal patterns.json)"
+                                 IsReadOnly="True"
+                                 VerticalAlignment="Center"
+                                 Margin="0 0 10 0"
+                                 TextWrapping="Wrap"
+                                 ToolTip="{Binding CustomPatternsFilePath}"
+                                 />
+
+                        <!-- Clear Button -->
+                        <Button Grid.Column="1"
+                                Style="{StaticResource MaterialDesignFlatButton}"
+                                Content="{materialDesign:PackIcon Clear}"
+                                ToolTip="Clear Custom Path (Use Default)"
+                                Margin="0 0 5 0"
+                                Click="ClearPath_Click"
+                                />
+
+                        <!-- Browse Button -->
+                        <Button Grid.Column="2"
+                                Style="{StaticResource MaterialDesignRaisedButton}"
+                                Content="BROWSE"
+                                materialDesign:ButtonAssist.CornerRadius="5"
+                                Click="BrowsePath_Click"
+                                />
+                    </Grid>
+                </StackPanel>
             </materialDesign:Card>
 
         </StackPanel>
