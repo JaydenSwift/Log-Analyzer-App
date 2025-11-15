@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using System.Text.RegularExpressions;
+using System.Text.RegularExpressions; // Keep for the search filter, but remove for pattern testing
 using Microsoft.Win32;
 using System.Diagnostics;
 using System.Text.Json;
@@ -66,7 +66,7 @@ namespace Log_Analyzer_App
     {
         public string Pattern { get; set; }
         public string Description { get; set; }
-        // The list of user-defined column names corresponding to regex capture groups (Group 1, 2, 3...)
+        // The list of user-defined column names corresponding to parse template fields (e.g., {Timestamp}, {Level})
         public List<string> FieldNames { get; set; } = new List<string>();
     }
 
@@ -115,10 +115,11 @@ namespace Log_Analyzer_App
         public static string CustomPatternsFilePath { get; set; } = string.Empty;
 
 
-        // Default pattern definition (now redundant as it's defined in Python, but kept as a fallback)
+        // Default pattern definition (now a Parse Template)
         public static LogPatternDefinition DefaultPatternDefinition = new LogPatternDefinition
         {
-            Pattern = @"^\[(.*?)\]\s*(INFO|WARN|ERROR):\s*(.*)$",
+            // Updated to use Parse Library syntax
+            Pattern = "[{Timestamp}] {Level}: {Message}",
             FieldNames = new List<string> { "Timestamp", "Level", "Message" }
         };
 
@@ -1249,7 +1250,9 @@ namespace Log_Analyzer_App
         }
 
         /// <summary>
-        /// Tests the currently suggested pattern against the first line of the log.
+        /// MODIFIED: Tests the currently suggested pattern against the first line of the log.
+        /// Since C# cannot run the Python `parse` library, this method is now simplified. 
+        /// It marks the process as requiring full parsing in Python to get results.
         /// </summary>
         private void TestParsingPatternOnFirstLine()
         {
@@ -1267,41 +1270,41 @@ namespace Log_Analyzer_App
 
             try
             {
-                // NOTE: We rely on the C# Regex object here which requires the user to use regex syntax, 
-                // but the final parsing in the Python script uses the 'parse' library. 
-                // This is a known limitation when using the regex builder.
-                var regex = new Regex(pattern);
-                Match match = regex.Match(LogDataStore.FirstLogLine);
+                // --- NEW LOGIC: Inform user that C# preview is unreliable for Parse Templates ---
 
-                // Group count check: match.Groups.Count is Group 0 (full match) + N capture groups.
-                // We compare this to the count of expected field names (N capture groups).
-                if (match.Success && match.Groups.Count - 1 == fieldNames.Count && fieldNames.Count > 0)
+                // Find the field names in the template using the same logic as the builder,
+                // ensuring they match the stored FieldNames list.
+                var placeholderRegex = new Regex(@"\{(?<name>.*?)(?::.*?)?\}");
+                var templateMatches = placeholderRegex.Matches(pattern);
+
+                var templateFieldNames = templateMatches
+                    .Select(m => m.Groups["name"].Value.Split(':')[0].Trim())
+                    .Where(name => !string.IsNullOrEmpty(name))
+                    .Distinct()
+                    .ToList();
+
+                if (templateFieldNames.Count > 0)
                 {
-                    // Match the capture groups (starting from 1) to the user-defined field names
-                    for (int i = 0; i < fieldNames.Count; i++)
+                    // If fields are found, populate the preview with the field names and a note
+                    foreach (string fieldName in templateFieldNames)
                     {
-                        string fieldName = fieldNames[i];
-                        string fieldValue = match.Groups[i + 1].Value.Trim();
+                        // Use the user's defined field name if available, otherwise use the placeholder name
+                        string columnFieldName = fieldNames.FirstOrDefault(f => f.Equals(fieldName, StringComparison.OrdinalIgnoreCase)) ?? fieldName;
 
-                        LogDataStore.ParsedFirstLine.Fields[fieldName] = fieldValue;
+                        LogDataStore.ParsedFirstLine.Fields[columnFieldName] = $"Requires Python parsing for result (Field: {fieldName})";
                     }
                 }
                 else
                 {
-                    // If parsing failed or groups mismatch, set a generic error message
                     LogDataStore.ParsedFirstLine.Fields.Clear();
-                    LogDataStore.ParsedFirstLine.Fields["Message"] = "Error: Pattern mismatch or capture groups count is incorrect.";
+                    LogDataStore.ParsedFirstLine.Fields["Message"] = "No named fields ({...}) found in pattern.";
                 }
-            }
-            catch (ArgumentException)
-            {
-                LogDataStore.ParsedFirstLine.Fields.Clear();
-                LogDataStore.ParsedFirstLine.Fields["Message"] = "Error: Invalid Regex Pattern.";
             }
             catch (Exception)
             {
+                // This catch is mainly for template parsing errors (e.g., malformed braces)
                 LogDataStore.ParsedFirstLine.Fields.Clear();
-                LogDataStore.ParsedFirstLine.Fields["Message"] = "Error: Matching failed.";
+                LogDataStore.ParsedFirstLine.Fields["Message"] = "Error: Pattern check failed.";
             }
         }
 
@@ -1334,14 +1337,15 @@ namespace Log_Analyzer_App
         /// </summary>
         private void CustomPattern_Click(object sender, RoutedEventArgs e)
         {
+            // MODIFIED: Update message box text
             if (string.IsNullOrWhiteSpace(LogDataStore.OriginalFilePath) || string.IsNullOrWhiteSpace(LogDataStore.FirstLogLine))
             {
-                MessageBox.Show("Please load a log file first to provide a line sample for the Regex Builder.", "Missing Log File", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Please load a log file first to provide a line sample for the Parse Template Builder.", "Missing Log File", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             // Pass the current active pattern definition (which may be the suggested one) to pre-fill the modal
-            var builderWindow = new RegexBuilderWindow(
+            var builderWindow = new PatternBuilderWindow(
                 LogDataStore.FirstLogLine,
                 LogDataStore.CurrentPatternDefinition
             );
@@ -1681,8 +1685,8 @@ namespace Log_Analyzer_App
         /// </summary>
         /// <param name="command">The command to run ('parse' or 'suggest_robust_pattern').</param>
         /// <param name="filePath">The path to the log file.</param>
-        /// <param name="logPattern">Lhe custom regex pattern to use for parsing (or null).</param>
-        /// <param name="fieldNames">The user-defined names for the capture groups (or null).</param>
+        /// <param name="logPattern">Lhe custom parse template to use for parsing (or null).</param>
+        /// <param name="fieldNames">The user-defined names for the fields (or null).</param>
         /// <param name="isBestEffortParse">Flag for the 'parse' command to allow zero matches (optional).</param>
         /// <returns>A List of LogEntry objects (for parse) or null.</returns>
         private List<LogEntry> RunPythonParser(string command, string filePath, string logPattern, List<string> fieldNames, bool isBestEffortParse = false)
@@ -1864,6 +1868,7 @@ namespace Log_Analyzer_App
 
 
                 // 3. Test the current active pattern (the suggested one) against the first line
+                // MODIFIED: This now calls the simplified test function
                 TestParsingPatternOnFirstLine();
 
                 // 4. Set initial status text

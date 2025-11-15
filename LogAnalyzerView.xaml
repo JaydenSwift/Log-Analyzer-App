@@ -124,13 +124,14 @@
                                      materialDesign:TextFieldAssist.DecorationVisibility="Collapsed"
                                      Margin="0 0 0 10"/>
 
-                            <!-- Pattern Suggestion and Regex Display -->
-                            <TextBlock Text="Suggested Parsing Pattern:" FontWeight="SemiBold" Opacity="0.8" Margin="0 0 0 5"/>
+                            <!-- Pattern Suggestion and Parse Template Display -->
+                            <TextBlock Text="Suggested Parse Template:" FontWeight="SemiBold" Opacity="0.8" Margin="0 0 0 5"/>
 
                             <materialDesign:Card UniformCornerRadius="5" Padding="10" Background="{DynamicResource MaterialDesignLightBackground}" Margin="0 0 0 10">
                                 <StackPanel>
+                                    <!-- The pattern is now displayed as a parse template, not a regex -->
                                     <TextBlock x:Name="PatternDisplayTextBlock" 
-                                               Text="[Default Pattern Regex Placeholder]" 
+                                               Text="[Default Pattern Parse Template Placeholder]" 
                                                FontFamily="Consolas" 
                                                TextWrapping="Wrap"
                                                FontSize="11" 
@@ -172,7 +173,7 @@
                             </ItemsControl>
 
                             <!-- Action Buttons -->
-                            <Button Content="USE DEFAULT PATTERN" 
+                            <Button Content="USE SUGGESTED PATTERN" 
                                     Style="{StaticResource MaterialDesignRaisedButton}"
                                     Background="{DynamicResource SecondaryHueMidBrush}"
                                     Foreground="{DynamicResource MaterialDesignBody}"
@@ -180,7 +181,8 @@
                                     Click="UseDefaultPattern_Click"
                                     Margin="0 5 0 5"/>
 
-                            <Button Content="CREATE CUSTOM REGEX PATTERN" 
+                            <!-- Text updated to reflect "Parse Template" -->
+                            <Button Content="CREATE CUSTOM PARSE TEMPLATE" 
                                     Style="{StaticResource MaterialDesignFlatButton}" 
                                     Foreground="{DynamicResource MaterialDesignBody}"
                                     Click="CustomPattern_Click"

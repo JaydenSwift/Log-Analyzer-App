@@ -1,4 +1,4 @@
-﻿<Window x:Class="Log_Analyzer_App.RegexBuilderWindow"
+﻿<Window x:Class="Log_Analyzer_App.PatternBuilderWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -6,8 +6,8 @@
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         xmlns:local="clr-namespace:Log_Analyzer_App"
         mc:Ignorable="d"
-        Title="Custom Regex Pattern Builder" 
-        Height="800" Width="800" 
+        Title="Custom Parse Template Builder" 
+        Height="600" Width="800" 
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -22,7 +22,7 @@
                 <RowDefinition Height="Auto"/>
                 <!-- Log Line Preview -->
                 <RowDefinition Height="Auto"/>
-                <!-- Regex Input & Test Button -->
+                <!-- Parse Template Input & Test Button -->
                 <RowDefinition Height="*"/>
                 <!-- Match Preview & Help -->
                 <RowDefinition Height="Auto"/>
@@ -30,40 +30,28 @@
             </Grid.RowDefinitions>
 
             <!-- Title -->
-            <TextBlock Grid.Row="0" Text="Custom Log Pattern Configuration" FontSize="24" FontWeight="Bold" Margin="0 0 0 15" Foreground="{DynamicResource SecondaryHueMidBrush}"/>
+            <TextBlock Grid.Row="0" Text="Custom Log Pattern Configuration" FontSize="24" FontWeight="Bold" Margin="0 0 0 15" Foreground="{DynamicResource MaterialDesignBody}"/>
 
-            <!-- 1. Log Line Preview -->
-            <!-- FIX: Binding mode set to OneWay to fix the XamlParseException reported earlier -->
-            <materialDesign:Card Grid.Row="1" UniformCornerRadius="8" Padding="15" Margin="0 0 0 15" Background="{DynamicResource MaterialDesignLightBackground}">
-                <StackPanel>
-                    <TextBlock Text="Log Line Sample (Read-Only)" FontWeight="SemiBold" Opacity="0.8" Margin="0 0 0 5"/>
-                    <TextBox Text="{Binding LogLinePreview, Mode=OneWay}"
-                             TextWrapping="Wrap"
-                             FontFamily="Consolas" 
-                             IsReadOnly="True"
-                             materialDesign:TextFieldAssist.DecorationVisibility="Collapsed"
-                             materialDesign:TextFieldAssist.UnderlineBrush="{x:Null}"
-                             BorderThickness="0"/>
-                </StackPanel>
-            </materialDesign:Card>
-
-            <!-- 2. Regex Input and Test -->
+            <!-- 1. Parse Template Input and Test -->
             <StackPanel Grid.Row="2" Margin="0 0 0 15">
-                <TextBlock Text="1. Enter Your Custom Regex Pattern" FontWeight="SemiBold" Opacity="0.8" Margin="0 0 0 5"/>
+                <!-- Text updated to refer to "Parse Template" -->
+                <TextBlock Text="1. Enter Your Custom Parse Template" FontWeight="SemiBold" Opacity="0.8" Margin="0 0 0 5" Foreground="{DynamicResource MaterialDesignBody}"/>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <TextBox x:Name="RegexPatternTextBox"
+                    <!-- Property name in binding is kept as CustomRegex for backward compatibility with C# property name, but mentally it's the Parse Template -->
+                    <TextBox x:Name="ParsePatternTextBox"
                              Text="{Binding CustomRegex, UpdateSourceTrigger=PropertyChanged}"
                              Grid.Column="0"
-                             materialDesign:HintAssist.Hint="Example: ^\[(.*?)\].*?(INFO|WARN|ERROR):\s*(.*)$"
+                             materialDesign:HintAssist.Hint="Example: [{Timestamp}] {Level}: {Message}"
                              TextWrapping="Wrap"
                              FontFamily="Consolas"
                              Margin="0 0 10 0"
-                             KeyUp="RegexPatternTextBox_KeyUp"/>
+                             KeyUp="ParsePatternTextBox_KeyUp"
+                             Foreground="{DynamicResource MaterialDesignBody}"/>
 
                     <Button Content="TEST PATTERN" 
                             Grid.Column="1" 
@@ -74,12 +62,13 @@
 
                 <TextBox x:Name="PatternDescriptionTextBox"
                          Text="{Binding PatternDescription, UpdateSourceTrigger=PropertyChanged}"
-                         materialDesign:HintAssist.Hint="Enter a brief description for this pattern (e.g., Apache Combined Log Format)"
+                         materialDesign:HintAssist.Hint="Enter a brief description for this pattern (e.g., Simple Bracketed Log Format)"
                          Style="{StaticResource MaterialDesignFloatingHintTextBox}"
-                         Margin="0 15 0 0"/>
+                         Margin="0 15 0 0"
+                         Foreground="{DynamicResource MaterialDesignBody}"/>
             </StackPanel>
 
-            <!-- 3. Match Preview & Help -->
+            <!-- 2. Match Preview & Help -->
             <Grid Grid.Row="3">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="2*"/>
@@ -90,12 +79,13 @@
                 <materialDesign:Card Grid.Column="0" UniformCornerRadius="8" Padding="15" Margin="0 0 10 0">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel>
-                            <TextBlock Text="2. Real-Time Match Preview (Groups 1, 2, 3...)" FontWeight="Bold" Margin="0 0 0 10"/>
+                            <!-- Text updated to refer to "Field Preview" -->
+                            <TextBlock Text="2. Real-Time Field Preview" FontWeight="Bold" Margin="0 0 0 10" Foreground="{DynamicResource MaterialDesignBody}"/>
                             <TextBlock x:Name="MatchStatusTextBlock" Text="Status: Waiting for test..." Margin="0 0 0 10" Foreground="Gray"/>
 
                             <!-- Dynamic Field Naming Section -->
-                            <TextBlock Text="Capture Group Naming:" FontWeight="SemiBold" Opacity="0.8" Margin="0 5 0 5" 
-                                       ToolTip="Give each capture group a descriptive column name."/>
+                            <TextBlock Text="Field Naming:" FontWeight="SemiBold" Opacity="0.8" Margin="0 5 0 5" 
+                                       ToolTip="Give each field a descriptive column name." Foreground="{DynamicResource MaterialDesignBody}"/>
 
                             <!-- ItemsControl to dynamically generate naming inputs for each group -->
                             <ItemsControl ItemsSource="{Binding FieldDefinitions}" Margin="0 0 0 15">
@@ -108,16 +98,19 @@
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
 
-                                            <!-- Group Index/Preview Value -->
-                                            <TextBlock Grid.Column="0" Text="{Binding GroupIndex, StringFormat='Group {0}:'}" FontWeight="SemiBold" Margin="0 0 10 0" VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding PreviewValue, StringFormat='&quot;{0}&quot;'}" Opacity="0.7" VerticalAlignment="Center" FontFamily="Consolas" TextTrimming="CharacterEllipsis" MaxWidth="150"/>
+                                            <!-- Field Index/Placeholder Name -->
+                                            <TextBlock Grid.Column="0" Text="{Binding PlaceholderName, StringFormat='Field: {0}:'}" FontWeight="SemiBold" Margin="0 0 10 0" VerticalAlignment="Center" Foreground="{DynamicResource MaterialDesignBody}"/>
+                                            <!-- Preview Value (Now generic text) -->
+                                            <TextBlock Grid.Column="1" Text="{Binding PreviewValue, StringFormat='&quot;{0}&quot;'}" Opacity="0.7" VerticalAlignment="Center" FontFamily="Consolas" TextTrimming="CharacterEllipsis" MaxWidth="150" Foreground="{DynamicResource MaterialDesignBody}"/>
 
                                             <!-- Name Input -->
+                                            <!-- Note: FieldName property is used for the actual column name and is bound here -->
                                             <TextBox Grid.Column="2" 
                                                      Text="{Binding FieldName, UpdateSourceTrigger=PropertyChanged}"
                                                      materialDesign:HintAssist.Hint="Column Name (e.g., Timestamp, Level)"
                                                      Margin="10 0 0 0"
-                                                     VerticalAlignment="Center"/>
+                                                     VerticalAlignment="Center"
+                                                     Foreground="{DynamicResource MaterialDesignBody}"/>
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
@@ -128,21 +121,15 @@
                     </ScrollViewer>
                 </materialDesign:Card>
 
-                <!-- Regex Help (Right) -->
+                <!-- Parse Template Help (Right) -->
                 <materialDesign:Card Grid.Column="1" UniformCornerRadius="8" Padding="15" Margin="10 0 0 0" Background="{DynamicResource MaterialDesignLightBackground}">
                     <StackPanel>
-                        <TextBlock Text="Regex Quick Help" FontWeight="Bold" Margin="0 0 0 10"/>
-                        <TextBlock Text="Every set of parentheses '(...)' is a capture group that becomes a column. You must name all captured groups." TextWrapping="Wrap" FontSize="12" Opacity="0.9" Margin="0 0 0 10"/>
+                        <TextBlock Text="Parse Template Quick Help" FontWeight="Bold" Margin="0 0 0 10" Foreground="{DynamicResource MaterialDesignBody}"/>
+                        <!-- Updated help text -->
+                        <TextBlock Text="Define fields using curly braces: {field_name}. All text outside the braces must exactly match your log line." TextWrapping="Wrap" FontSize="12" Opacity="0.9" Margin="0 0 0 10" Foreground="{DynamicResource MaterialDesignBody}"/>
 
-                        <TextBlock Text="Mandatory Fields:" FontWeight="SemiBold" Margin="0 0 0 5"/>
-                        <TextBlock Text="For charting and filtering to work, please ensure your first three named columns are: 1. Timestamp, 2. Level, and 3. Message." TextWrapping="Wrap" FontSize="12" Opacity="0.9" Margin="0 0 0 10"/>
-
-                        <TextBlock Text="Common Groups:" FontWeight="SemiBold" Margin="0 0 0 5"/>
-                        <TextBlock Text="• (.*?) - Any content (non-greedy)" FontSize="12" FontFamily="Consolas"/>
-                        <TextBlock Text="• \s* - Zero or more spaces" FontSize="12" FontFamily="Consolas"/>
-                        <TextBlock Text="• (INFO|WARN|ERROR) - Specific levels" FontSize="12" FontFamily="Consolas"/>
-                        <TextBlock Text="• \[...\] - Matches literal brackets" FontSize="12" FontFamily="Consolas"/>
-                        <TextBlock Text="• ^...$ - Start and end of line" FontSize="12" FontFamily="Consolas"/>
+                        <TextBlock Text="Date Fields:" FontWeight="SemiBold" Margin="0 0 0 5" Foreground="{DynamicResource MaterialDesignBody}"/>
+                        <TextBlock Text="Ensure the date field in the log line is capture properly so that date and time features work as intended." TextWrapping="Wrap" FontSize="12" Opacity="0.9" Margin="0 0 0 10" Foreground="{DynamicResource MaterialDesignBody}"/>
                     </StackPanel>
                 </materialDesign:Card>
             </Grid>
@@ -160,7 +147,8 @@
                         materialDesign:ButtonAssist.CornerRadius="5"
                         Background="{DynamicResource PrimaryHueMidBrush}"
                         IsEnabled="False"
-                        Click="SaveAndUsePattern_Click"/>
+                        Click="SaveAndUsePattern_Click"
+                        Foreground="{DynamicResource MaterialDesignBody}"/>
             </StackPanel>
         </Grid>
     </materialDesign:Card>

@@ -2,20 +2,28 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
-using System.Text.RegularExpressions; // Keep this import, but we will avoid using its methods
+using System.Text.RegularExpressions; // Keep this import for placeholder detection
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 
 namespace Log_Analyzer_App
 {
-    // --- Model for dynamic fields in the Regex Builder UI ---
+    // --- Model for dynamic fields in the Parse Template Builder UI ---
     public class FieldDefinition : INotifyPropertyChanged
     {
+        // Placeholder name extracted from the template (e.g., "Timestamp")
+        public string PlaceholderName { get; set; }
+        // This index is now obsolete but kept for reference to the original index
         public int GroupIndex { get; set; }
+
+        // This is now always "Parsing with Python required for accurate preview"
         public string PreviewValue { get; set; }
 
         private string _fieldName;
+        /// <summary>
+        /// This is the final column name the user defines. It defaults to PlaceholderName.
+        /// </summary>
         public string FieldName
         {
             get => _fieldName;
@@ -34,15 +42,15 @@ namespace Log_Analyzer_App
     /// Interaction logic for RegexBuilderWindow.xaml
     /// A modal dialog that allows users to create and test custom parse templates and name the fields.
     /// </summary>
-    public partial class RegexBuilderWindow : Window, INotifyPropertyChanged
+    public partial class PatternBuilderWindow : Window, INotifyPropertyChanged
     {
         // --- Properties for DataContext Binding ---
 
         // The input log line provided by the main view
         public string LogLinePreview { get; }
 
-        // The parse template being edited by the user
-        private string _customRegex; // Renamed 'CustomTemplate' mentally, but keep 'CustomRegex' for XAML binding compatibility
+        // The parse template being edited by the user (retaining CustomRegex name for XAML compatibility)
+        private string _customRegex;
         public string CustomRegex
         {
             get => _customRegex;
@@ -68,7 +76,7 @@ namespace Log_Analyzer_App
         /// <summary>
         /// Initializes the modal with the current log pattern and the first log line.
         /// </summary>
-        public RegexBuilderWindow(string firstLogLine, LogPatternDefinition initialDefinition)
+        public PatternBuilderWindow(string firstLogLine, LogPatternDefinition initialDefinition)
         {
             InitializeComponent();
             this.DataContext = this;
@@ -84,17 +92,18 @@ namespace Log_Analyzer_App
         // --- Core Template Testing Logic ---
 
         /// <summary>
-        /// Attempts to parse the custom template and identify placeholder fields.
-        /// NOTE: This does NOT use the Python parser; it uses C# logic to identify 
-        /// the named fields ({...}) in the template string.
+        /// MODIFIED: Attempts to identify placeholder fields ({...}) in the template string.
+        /// The previous logic for converting the pattern to Regex and attempting a match in C# is removed
+        /// because it was unreliable for the `parse` format. The preview value is now a static message.
         /// </summary>
         private void TestPattern()
         {
             MatchStatusTextBlock.Foreground = Brushes.Gray;
             SaveButton.IsEnabled = false;
 
-            // Store old definitions temporarily to preserve names if group count is the same
-            var oldDefinitions = FieldDefinitions.ToDictionary(f => f.GroupIndex, f => f.FieldName);
+            // Store old definitions temporarily to preserve names if field count is the same
+            // Use PlaceholderName as the key for comparison
+            var oldDefinitions = FieldDefinitions.ToDictionary(f => f.PlaceholderName, f => f.FieldName);
             FieldDefinitions.Clear(); // Clear old definitions
 
             if (string.IsNullOrWhiteSpace(LogLinePreview))
@@ -105,94 +114,73 @@ namespace Log_Analyzer_App
 
             if (string.IsNullOrWhiteSpace(CustomRegex))
             {
-                MatchStatusTextBlock.Text = "Status: Enter a parse template above (use {...}).";
+                MatchStatusTextBlock.Text = "Status: Enter a parse template above (use {field_name}).";
                 return;
             }
 
-            // --- 1. IDENTIFY FIELDS IN TEMPLATE (C# equivalent to parse.compile()._names) ---
-            var placeholderRegex = new Regex(@"\{(?<name>.*?)\}");
+            // --- 1. IDENTIFY FIELDS IN TEMPLATE (Find all {placeholder} occurrences) ---
+            // Regex to find placeholders, optionally including type specifiers (e.g., {Timestamp} or {Status:d})
+            // Capture the name (everything before ':' or '}')
+            var placeholderRegex = new Regex(@"\{(?<name>.*?)(?::.*?)?\}");
             var templateMatches = placeholderRegex.Matches(CustomRegex);
 
             // Create a list of unique field names extracted from the template
+            // Field names must be everything before the optional format specifier (e.g., 'Timestamp' from '{Timestamp:S}')
             var uniqueFieldNames = templateMatches
-                .Select(m => m.Groups["name"].Value.Trim())
+                .Select(m => m.Groups["name"].Value.Split(':')[0].Trim()) // Take only the name part before the colon
                 .Where(name => !string.IsNullOrEmpty(name))
                 .Distinct()
                 .ToList();
 
-            // --- 2. PREVIEW LOGIC (STILL USES REGEX TO FAKE PARSING FOR PREVIEW) ---
-            // Because C# does not have the 'parse' library, we temporarily convert the template 
-            // back to a rough regex for the preview value only.
-
-            // This replacement is very rough and is ONLY for UI preview, not actual parsing.
-            string previewRegexPattern = CustomRegex;
-            foreach (string name in uniqueFieldNames)
-            {
-                // Replace named placeholders with a non-greedy capture group
-                previewRegexPattern = previewRegexPattern.Replace($"{{{name}}}", "(.*?)");
-            }
-            // Ensure the entire line is considered for match
-            previewRegexPattern = "^" + previewRegexPattern + "$";
-
-            Match previewMatch = null;
-            try
-            {
-                previewMatch = System.Text.RegularExpressions.Regex.Match(LogLinePreview, previewRegexPattern);
-            }
-            catch (ArgumentException)
-            {
-                MatchStatusTextBlock.Text = "Status: ERROR - Template generates invalid Regex. Check for misplaced braces/chars.";
-                MatchStatusTextBlock.Foreground = Brushes.Red;
-                return;
-            }
-
-            // --- 3. POPULATE FIELD DEFINITIONS ---
+            // --- 2. POPULATE FIELD DEFINITIONS ---
             if (uniqueFieldNames.Count > 0)
             {
                 for (int i = 0; i < uniqueFieldNames.Count; i++)
                 {
-                    string fieldName = uniqueFieldNames[i];
-                    string previewValue = "N/A";
+                    string placeholderName = uniqueFieldNames[i];
 
-                    // Try to get the actual preview value if the rough regex matched
-                    // Note: Groups.Count includes group 0, so we check group i + 1
-                    if (previewMatch != null && previewMatch.Success && i + 1 < previewMatch.Groups.Count)
+                    // The actual C# preview logic is removed as it was unreliable.
+                    // Instead, we inform the user that the Python parser will handle it.
+                    string previewValue = "Parsing with Python required for preview";
+
+                    string initialName;
+
+                    // If the placeholder name is one of the standard names, use that as the default column name.
+                    if (new[] { "Timestamp", "Level", "Message" }.Contains(placeholderName, StringComparer.OrdinalIgnoreCase))
                     {
-                        previewValue = previewMatch.Groups[i + 1].Value.Trim();
-                    }
-
-                    string initialName = "";
-
-                    // Attempt to pre-fill name from the previous state (oldDefinitions)
-                    if (oldDefinitions.ContainsKey(i + 1))
-                    {
-                        initialName = oldDefinitions[i + 1];
+                        initialName = placeholderName;
                     }
                     else
                     {
-                        // Apply default names based on position
-                        if (i == 0) initialName = "Timestamp";
-                        else if (i == 1) initialName = "Level";
-                        else if (i == 2) initialName = "Message";
-                        else initialName = fieldName; // Use the placeholder name as default
+                        // Default to the placeholder name
+                        initialName = placeholderName;
+                    }
+
+
+                    // Attempt to pre-fill name from the previous state (oldDefinitions)
+                    if (oldDefinitions.ContainsKey(placeholderName))
+                    {
+                        // Use the last-entered user name for this placeholder name
+                        initialName = oldDefinitions[placeholderName];
                     }
 
                     FieldDefinitions.Add(new FieldDefinition
                     {
-                        GroupIndex = i + 1,
+                        GroupIndex = i + 1, // Retain index for original compatibility, though it's less meaningful now
+                        PlaceholderName = placeholderName,
                         FieldName = initialName,
                         PreviewValue = previewValue
                     });
                 }
 
-                MatchStatusTextBlock.Text = $"Status: Found {uniqueFieldNames.Count} unique fields. Please name them all.";
+                MatchStatusTextBlock.Text = $"Status: Found {uniqueFieldNames.Count} unique fields. Please confirm column names.";
                 MatchStatusTextBlock.Foreground = Brushes.Blue;
 
                 UpdateSaveButtonState();
             }
             else
             {
-                MatchStatusTextBlock.Text = "Status: No fields detected. Use braces like {Timestamp}.";
+                MatchStatusTextBlock.Text = "Status: No fields detected. Use curly braces like {Timestamp}.";
                 MatchStatusTextBlock.Foreground = Brushes.Orange;
             }
         }
@@ -214,7 +202,7 @@ namespace Log_Analyzer_App
                 SaveButton.IsEnabled = false;
                 if (FieldDefinitions.Any())
                 {
-                    MatchStatusTextBlock.Text = $"Status: Please name all {FieldDefinitions.Count} fields to enable save.";
+                    MatchStatusTextBlock.Text = $"Status: Please confirm all {FieldDefinitions.Count} field names to enable save.";
                     MatchStatusTextBlock.Foreground = Brushes.Orange;
                 }
             }
@@ -234,8 +222,9 @@ namespace Log_Analyzer_App
         /// Allows testing on key up to provide real-time feedback, but only for the Enter key 
         /// to prevent too many tests during typing.
         /// </summary>
-        private void RegexPatternTextBox_KeyUp(object sender, KeyEventArgs e)
+        private void ParsePatternTextBox_KeyUp(object sender, KeyEventArgs e)
         {
+            // Renamed handler to match XAML name
             if (e.Key == Key.Enter)
             {
                 TestPattern();
