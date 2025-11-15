@@ -29,6 +29,10 @@
             <!-- NEW: Global converter for Visibility binding -->
             <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
+            <!-- NEW: Custom Converters for Loading States -->
+            <local:InverseBooleanConverter x:Key="InverseBooleanConverter" />
+            <local:BooleanToContentConverter x:Key="BooleanToContentConverter" />
+
         </ResourceDictionary>
     </Application.Resources>
 </Application>

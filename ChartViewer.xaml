@@ -73,10 +73,11 @@
                                       ItemsSource="{Binding AvailableStatsFields}"
                                       SelectedItem="{Binding SelectedStatsField, Mode=TwoWay}"
                                       Grid.Column="0"
-                                      Margin="0 0 10 0"/>
+                                      Margin="0 0 10 0"
+                                      IsEnabled="{Binding IsCalculating, Converter={StaticResource InverseBooleanConverter}}"/>
 
                             <!-- Date Pickers (Center Column) -->
-                            <StackPanel Grid.Column="1" Margin="5 0">
+                            <StackPanel Grid.Column="1" Margin="5 0" IsEnabled="{Binding IsCalculating, Converter={StaticResource InverseBooleanConverter}}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -99,7 +100,7 @@
                             </StackPanel>
 
                             <!-- Time Pickers (Right Column) -->
-                            <StackPanel Grid.Column="2" Margin="10 0">
+                            <StackPanel Grid.Column="2" Margin="10 0" IsEnabled="{Binding IsCalculating, Converter={StaticResource InverseBooleanConverter}}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -123,14 +124,15 @@
 
                             <!-- FIX: Changed style to the standard MaterialDesignRaisedButton and applied an accent background -->
                             <Button Grid.Column="3"
-                                    Content="APPLY FILTER"
+                                    Content="{Binding IsCalculating, Converter={StaticResource BooleanToContentConverter}, ConverterParameter='APPLY FILTER|CALCULATING...'}"
                                     Style="{StaticResource MaterialDesignRaisedButton}"
                                     Background="{DynamicResource SecondaryHueMidBrush}"
                                     Foreground="{DynamicResource MaterialDesignBody}"
                                     materialDesign:ButtonAssist.CornerRadius="5"
                                     Click="ApplyChartFilter_Click"
                                     Margin="10 0 0 0"
-                                    VerticalAlignment="Center"/>
+                                    VerticalAlignment="Center"
+                                    IsEnabled="{Binding IsCalculating, Converter={StaticResource InverseBooleanConverter}}"/>
                         </Grid>
                     </StackPanel>
                 </materialDesign:Card>
@@ -143,6 +145,23 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
+
+                        <!-- NEW: Overlay for the entire 2-column chart area -->
+                        <Grid Grid.ColumnSpan="2" 
+                              Background="{DynamicResource MaterialDesignPaper}" 
+                              Opacity="0.8"
+                              Visibility="{Binding IsCalculating, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <ProgressBar Style="{StaticResource MaterialDesignCircularProgressBar}" 
+                                             IsIndeterminate="True" 
+                                             Width="50" Height="50" 
+                                             Foreground="{DynamicResource PrimaryHueMidBrush}"/>
+                                <TextBlock Text="Calculating Data..." 
+                                           Margin="10" 
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource MaterialDesignBody}"/>
+                            </StackPanel>
+                        </Grid>
 
                         <!-- Left Column: Bar Chart (Raw Counts) -->
                         <Grid Grid.Column="0" Margin="0 0 10 0">
@@ -227,13 +246,13 @@
                                     <!-- Label Display Style -->
                                     <TextBlock Text="Slice Label Content:" Opacity="0.8" Margin="0 0 0 5"/>
                                     <StackPanel Orientation="Horizontal" Margin="0 0 0 10">
-                                        <RadioButton x:Name="PercentRadio" Content="Percentage Only" IsChecked="True" GroupName="PieLabel" Margin="0 0 15 0" Foreground="{DynamicResource MaterialDesignBody}" Checked="PieLabelMode_Changed"/>
-                                        <RadioButton x:Name="RawCountRadio" Content="Raw Count" GroupName="PieLabel" Foreground="{DynamicResource MaterialDesignBody}" Checked="PieLabelMode_Changed"/>
+                                        <RadioButton x:Name="PercentRadio" Content="Percentage Only" IsChecked="True" GroupName="PieLabel" Margin="0 0 15 0" Foreground="{DynamicResource MaterialDesignBody}" Checked="PieLabelMode_Changed" IsEnabled="{Binding IsCalculating, Converter={StaticResource InverseBooleanConverter}}"/>
+                                        <RadioButton x:Name="RawCountRadio" Content="Raw Count" GroupName="PieLabel" Foreground="{DynamicResource MaterialDesignBody}" Checked="PieLabelMode_Changed" IsEnabled="{Binding IsCalculating, Converter={StaticResource InverseBooleanConverter}}"/>
                                     </StackPanel>
 
                                     <!-- Minimum Threshold Slider -->
                                     <TextBlock Text="Minimum Slice Percentage (0%)" x:Name="SlicePercentageText" Opacity="0.8" Margin="0 5 0 5"/>
-                                    <Slider x:Name="SliceThresholdSlider" Value="0" Minimum="0" Maximum="10" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliceThresholdSlider_ValueChanged"/>
+                                    <Slider x:Name="SliceThresholdSlider" Value="0" Minimum="0" Maximum="10" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliceThresholdSlider_ValueChanged" IsEnabled="{Binding IsCalculating, Converter={StaticResource InverseBooleanConverter}}"/>
                                 </StackPanel>
                             </materialDesign:Card>
                         </Grid>
@@ -242,34 +261,56 @@
 
                 <!-- NEW: Time Series Chart Area (Full Width) -->
                 <materialDesign:Card UniformCornerRadius="10" Padding="15" Margin="0 20 0 0">
-                    <StackPanel>
-                        <TextBlock Text="Event Trend Over Time" FontSize="18" FontWeight="SemiBold" Margin="0 0 0 15" HorizontalAlignment="Center" Foreground="{DynamicResource MaterialDesignBody}"/>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
 
-                        <!-- Dropdown for Time Range Selection -->
-                        <ComboBox materialDesign:HintAssist.Hint="Group by Time Range"
-                                  ItemsSource="{Binding TimeRangeTypes}"
-                                  SelectedItem="{Binding SelectedTimeRange, Mode=TwoWay}"
-                                  HorizontalAlignment="Center"
-                                  Width="200"
-                                  Margin="0 0 0 20"/>
+                        <StackPanel Grid.Row="0">
+                            <TextBlock Text="Event Trend Over Time" FontSize="18" FontWeight="SemiBold" Margin="0 0 0 15" HorizontalAlignment="Center" Foreground="{DynamicResource MaterialDesignBody}"/>
 
-                        <!-- Time Series Bar Chart -->
-                        <lvc:CartesianChart Series="{Binding TimeSeriesCollection}" 
-                                            LegendLocation="None" 
-                                            Hoverable="True"
-                                            Height="400">
+                            <!-- Dropdown for Time Range Selection -->
+                            <ComboBox materialDesign:HintAssist.Hint="Group by Time Range"
+                                      ItemsSource="{Binding TimeRangeTypes}"
+                                      SelectedItem="{Binding SelectedTimeRange, Mode=TwoWay}"
+                                      HorizontalAlignment="Center"
+                                      Width="200"
+                                      Margin="0 0 0 20"
+                                      IsEnabled="{Binding IsCalculating, Converter={StaticResource InverseBooleanConverter}}"/>
+                        </StackPanel>
 
-                            <lvc:CartesianChart.AxisX>
-                                <!-- The title will be dynamic based on the SelectedTimeRange -->
-                                <lvc:Axis Title="{Binding SelectedTimeRange}" ShowLabels="True" Labels="{Binding TimeLabels}"/>
-                            </lvc:CartesianChart.AxisX>
+                        <!-- NEW: Time Series Chart Area Grid -->
+                        <Grid Grid.Row="1">
+                            <!-- Time Series Bar Chart -->
+                            <lvc:CartesianChart Series="{Binding TimeSeriesCollection}" 
+                                                LegendLocation="None" 
+                                                Hoverable="True"
+                                                Height="400">
 
-                            <lvc:CartesianChart.AxisY>
-                                <lvc:Axis Title="Event Count" LabelFormatter="{Binding Formatter}"/>
-                            </lvc:CartesianChart.AxisY>
+                                <lvc:CartesianChart.AxisX>
+                                    <!-- The title will be dynamic based on the SelectedTimeRange -->
+                                    <lvc:Axis Title="{Binding SelectedTimeRange}" ShowLabels="True" Labels="{Binding TimeLabels}"/>
+                                </lvc:CartesianChart.AxisX>
 
-                        </lvc:CartesianChart>
-                    </StackPanel>
+                                <lvc:CartesianChart.AxisY>
+                                    <lvc:Axis Title="Event Count" LabelFormatter="{Binding Formatter}"/>
+                                </lvc:CartesianChart.AxisY>
+
+                            </lvc:CartesianChart>
+
+                            <!-- NEW: Overlay for the Time Series Chart Area -->
+                            <Grid Background="{DynamicResource MaterialDesignPaper}" 
+                                  Opacity="0.8"
+                                  Visibility="{Binding IsCalculating, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <ProgressBar Style="{StaticResource MaterialDesignCircularProgressBar}" 
+                                             IsIndeterminate="True" 
+                                             Width="50" Height="50" 
+                                             HorizontalAlignment="Center" VerticalAlignment="Center"
+                                             Foreground="{DynamicResource PrimaryHueMidBrush}"/>
+                            </Grid>
+                        </Grid>
+                    </Grid>
                 </materialDesign:Card>
                 <!-- END NEW: Time Series Chart Area -->
 

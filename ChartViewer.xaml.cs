@@ -9,6 +9,8 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Threading.Tasks; // NEW: Added for threading
+using System.Windows.Threading; // Added for completeness, though not explicitly used for Invoke
 
 namespace Log_Analyzer_App
 {
@@ -54,7 +56,6 @@ namespace Log_Analyzer_App
     {
         // --- LiveCharts Properties ---
 
-        // FIX: Initialize collections upon declaration to prevent NullReferenceException
         private SeriesCollection _seriesCollection = new SeriesCollection();
         public SeriesCollection SeriesCollection
         {
@@ -62,7 +63,6 @@ namespace Log_Analyzer_App
             set { _seriesCollection = value; OnPropertyChanged(nameof(SeriesCollection)); }
         }
 
-        // FIX: Initialize collections upon declaration to prevent NullReferenceException
         private SeriesCollection _pieSeriesCollection = new SeriesCollection();
         public SeriesCollection PieSeriesCollection
         {
@@ -70,7 +70,6 @@ namespace Log_Analyzer_App
             set { _pieSeriesCollection = value; OnPropertyChanged(nameof(PieSeriesCollection)); }
         }
 
-        // Labels property is kept but will no longer be used for the X-Axis in the new ColumnSeries structure
         private string[] _labels;
         public string[] Labels
         {
@@ -78,10 +77,18 @@ namespace Log_Analyzer_App
             set { _labels = value; OnPropertyChanged(nameof(Labels)); }
         }
 
-        // Formatter is used for the Y-Axis label display (Count)
         public Func<double, string> Formatter { get; set; }
 
         // --- Chart Grouping & State Variables ---
+
+        // NEW: Property to indicate if calculation is in progress (for UI threading)
+        private bool _isCalculating = false;
+        public bool IsCalculating
+        {
+            get => _isCalculating;
+            set { _isCalculating = value; OnPropertyChanged(nameof(IsCalculating)); }
+        }
+
 
         // NEW: Time Series Chart Properties
         private SeriesCollection _timeSeriesCollection = new SeriesCollection();
@@ -108,11 +115,21 @@ namespace Log_Analyzer_App
                 if (_selectedTimeRange != value)
                 {
                     _selectedTimeRange = value;
-                    // Update the time chart immediately when range type changes
-                    UpdateTimeRangeChart(value);
+                    // FIX for CS4014 on line 168: Use a pattern that avoids the warning while running async.
+                    // We call the helper method and ignore the Task result directly in the setter.
+#pragma warning disable CS4014 // Because this call is not awaited...
+                    UpdateOnlyTimeChartTask();
+#pragma warning restore CS4014
                     OnPropertyChanged(nameof(SelectedTimeRange));
                 }
             }
+        }
+
+        // NEW: Helper method to call UpdateOnlyTimeChart without blocking the setter.
+        // We moved the async logic here so the setter stays synchronous.
+        private async Task UpdateOnlyTimeChartTask()
+        {
+            await UpdateOnlyTimeChart();
         }
 
         // Exposes the enum values for ComboBox binding
@@ -145,16 +162,23 @@ namespace Log_Analyzer_App
                 if (_selectedStatsField != value)
                 {
                     _selectedStatsField = value;
-                    // Recalculate charts whenever the grouping field changes
-                    UpdateAllCharts();
+                    // FIX for CS4014 on line 123: Use a helper task pattern for the setter.
+#pragma warning disable CS4014 // Because this call is not awaited...
+                    UpdateAllChartsTask(ignoreTimeChart: false);
+#pragma warning restore CS4014
                     OnPropertyChanged(nameof(SelectedStatsField));
                 }
             }
         }
 
+        // NEW: Helper task for SelectedStatsField setter (same pattern as above helper)
+        private async Task UpdateAllChartsTask(bool ignoreTimeChart)
+        {
+            await UpdateAllCharts(ignoreTimeChart);
+        }
+
         // --- NEW: Chart-Specific Filter Properties ---
 
-        // CRITICAL: Removed UpdateAllCharts from setters
         private DateTime? _chartStartDate;
         public DateTime? ChartStartDate
         {
@@ -207,10 +231,10 @@ namespace Log_Analyzer_App
         /// <summary>
         /// NEW: Handles the click of the "Apply Filter" button.
         /// </summary>
-        private void ApplyChartFilter_Click(object sender, RoutedEventArgs e)
+        private async void ApplyChartFilter_Click(object sender, RoutedEventArgs e)
         {
-            // This is the single point where the filter is applied and charts are updated
-            UpdateAllCharts();
+            // Awaiting the async Task here is correct for an event handler
+            await UpdateAllCharts();
         }
 
         /// <summary>
@@ -232,12 +256,12 @@ namespace Log_Analyzer_App
 
             // Collect all successfully parsed dates from the selected column
             var validDates = entries
-                .Where(e => e.Fields.ContainsKey(timestampFieldName))
-                .Select(e => e.Fields[timestampFieldName])
+        .Where(e => e.Fields.ContainsKey(timestampFieldName))
+        .Select(e => e.Fields[timestampFieldName])
                 // Use the shared TryParseLogDateTime helper
                 .Where(v => LogDataStore.TryParseLogDateTime(v, out DateTime _))
-                .Select(v => { LogDataStore.TryParseLogDateTime(v, out DateTime dt); return dt; })
-                .ToList();
+        .Select(v => { LogDataStore.TryParseLogDateTime(v, out DateTime dt); return dt; })
+        .ToList();
 
             if (validDates.Any())
             {
@@ -290,7 +314,7 @@ namespace Log_Analyzer_App
 
         // --- Initialization ---
 
-        private void InitializeChartData()
+        private async void InitializeChartData()
         {
             // 1. Setup Formatter
             Formatter = value => value.ToString("N0");
@@ -298,121 +322,246 @@ namespace Log_Analyzer_App
             // 2. Collections are initialized at property declaration. We skip re-initialization here.
 
             // 3. Update charts immediately based on the initialized SelectedStatsField
-            // CRITICAL: We call ApplyChartFilter_Click here to ensure initial load runs through the new manual process
+            // CRITICAL: We call UpdateAllCharts here to ensure initial load runs through the new manual process
             if (SelectedStatsField != null)
             {
-                ApplyChartFilter_Click(null, null);
+                await UpdateAllCharts();
             }
-
-            // NEW: Initial call to update the time series chart
-            UpdateTimeRangeChart(SelectedTimeRange);
         }
 
         /// <summary>
-        /// NEW: Centralized update method to fetch data and refresh both charts based on SelectedStatsField.
+        /// NEW: Async method to update only the time series chart data.
+        /// This is called when the user changes the time range grouping dropdown.
         /// </summary>
-        public void UpdateAllCharts()
+        public async Task UpdateOnlyTimeChart() // MODIFIED from async void to async Task
         {
-            if (string.IsNullOrEmpty(SelectedStatsField))
+            // Do not run if no timestamp field is selected or if a full calculation is already in progress
+            if (string.IsNullOrEmpty(LogDataStore.SelectedTimestampField) || IsCalculating)
             {
-                SeriesCollection.Clear();
-                PieSeriesCollection.Clear();
-                TimeSeriesCollection.Clear(); // Clear time series too
-                Labels = new string[0];
-                TimeLabels = new string[0]; // Clear time series labels
-                BarChartLegendItems.Clear();
-                FilteredLogCount = 0; // Reset count on clear
+                // Clear time chart on insufficient data or if already calculating
+                TimeSeriesCollection.Clear();
+                TimeLabels = new string[0];
+                OnPropertyChanged(nameof(TimeLabels));
                 return;
             }
 
-            // Fetch dynamic counts based on the currently selected field using the LogDataStore method.
-            // CRITICAL: Pass the chart's local filter properties to the centralized calculation function.
-            ObservableCollection<CountItem> dynamicLogData = LogDataStore.GetDynamicSummaryCounts(
-                SelectedStatsField,
-                ChartStartDate,
-                ChartEndDate,
-                ChartStartTimeText,
-                ChartEndTimeText
-            );
+            // Set calculating state to disable time chart controls
+            IsCalculating = true;
 
-            // Calculate the total number of filtered logs represented in the counts
-            FilteredLogCount = (int)dynamicLogData.Sum(c => c.Count);
+            try
+            {
+                // Capture the current filter state to pass to the background thread
+                TimeRangeType currentRange = SelectedTimeRange;
+                DateTime? currentStartDate = ChartStartDate;
+                DateTime? currentEndDate = ChartEndDate;
+                string currentStartTimeText = ChartStartTimeText;
+                string currentEndTimeText = ChartEndTimeText;
 
-            // 1. Labels property is now redundant for X-Axis but kept for compatibility/debug
-            Labels = dynamicLogData.Select(c => c.Key).ToArray();
+                // Offload the potentially expensive time-based grouping to a background thread
+                ObservableCollection<CountItem> timeLogData = await Task.Run(() =>
+                {
+                    // This runs on a separate thread, calling the static helper method
+                    return LogDataStore.GetTimeRangeSummaryCounts(
+            currentRange,
+            currentStartDate,
+            currentEndDate,
+            currentStartTimeText,
+            currentEndTimeText
+        );
+                });
 
-            // 2. Update Charts
-            UpdateBarChart(dynamicLogData);
-            UpdatePieChart(dynamicLogData, SliceThresholdSlider.Value);
-
-            // NEW: Update the Time Range Chart (uses the same date/time filters)
-            UpdateTimeRangeChart(SelectedTimeRange);
+                // Update the UI properties on the main thread (automatic after await)
+                UpdateTimeSeriesChartUI(timeLogData);
+            }
+            catch (Exception ex)
+            {
+                // Handle exceptions gracefully
+                Console.WriteLine($"Error updating time chart: {ex.Message}");
+            }
+            finally
+            {
+                IsCalculating = false;
+            }
         }
 
-        // --- Core Update Methods ---
 
         /// <summary>
-        /// MODIFIED: Updates the Column/Bar Chart.
-        /// CRITICAL FIX: Creates a separate ColumnSeries for *every* data point (bar)
-        /// so that each bar can be assigned its unique, dynamic color, and updates the custom legend items.
+        /// NEW: Centralized ASYNC update method to fetch data and refresh both charts based on SelectedStatsField.
+        /// </summary>
+        /// <param name="ignoreTimeChart">Flag to prevent time chart calculation, used when only Pie/Bar are updated.</param>
+        public async Task UpdateAllCharts(bool ignoreTimeChart = false)
+        {
+            if (string.IsNullOrEmpty(SelectedStatsField) || LogDataStore.LogEntries.Count == 0)
+            {
+                SeriesCollection.Clear();
+                PieSeriesCollection.Clear();
+                TimeSeriesCollection.Clear();
+                Labels = new string[0];
+                TimeLabels = new string[0];
+                BarChartLegendItems.Clear();
+                FilteredLogCount = 0;
+                return;
+            }
+
+            // 1. Set UI state to calculating
+            IsCalculating = true;
+
+            // NEW FIX: Capture the current UI control states (DependencyObjects)
+            // on the UI thread BEFORE starting the background task.
+            double sliceThreshold = 0;
+            bool isPercentMode = false; // Capture the radio button state safely
+
+            try
+            {
+                // We must check if the control is loaded to avoid an exception during startup initialization
+                if (SliceThresholdSlider.IsLoaded)
+                {
+                    // Accessing UI controls before Task.Run is safe as this method starts on the UI thread.
+                    sliceThreshold = SliceThresholdSlider.Value;
+
+                    // Safely read the RadioButton state on the UI thread
+                    isPercentMode = PercentRadio.IsChecked == true;
+                }
+            }
+            catch (Exception ex)
+            {
+                // If XAML access fails unexpectedly, use defaults and log.
+                Console.WriteLine($"Warning: Failed to read UI state before Task.Run: {ex.Message}");
+            }
+
+
+            try
+            {
+                // Capture the current filter state and selected field to pass to the background thread
+                string currentStatsField = SelectedStatsField;
+                DateTime? currentStartDate = ChartStartDate;
+                DateTime? currentEndDate = ChartEndDate;
+                string currentStartTimeText = ChartStartTimeText;
+                string currentEndTimeText = ChartEndTimeText;
+                TimeRangeType currentRange = SelectedTimeRange;
+
+
+                // --- 2. Offload Data Fetching and Calculation to a Background Thread (ThreadPool) ---
+
+                // The task will return two data collections (main counts and time counts)
+                var (dynamicLogData, timeLogData) = await Task.Run(() =>
+                {
+                    // A. Fetch main counts (Runs on background thread)
+                    ObservableCollection<CountItem> dynamicCounts = LogDataStore.GetDynamicSummaryCounts(
+            currentStatsField,
+            currentStartDate,
+            currentEndDate,
+            currentStartTimeText,
+            currentEndTimeText
+        );
+
+                    // B. Fetch time series counts (Runs on background thread)
+                    // Skip if specifically told to ignore, or if no timestamp field is set
+                    ObservableCollection<CountItem> timeCounts = new ObservableCollection<CountItem>();
+                    if (!ignoreTimeChart && !string.IsNullOrEmpty(LogDataStore.SelectedTimestampField))
+                    {
+                        timeCounts = LogDataStore.GetTimeRangeSummaryCounts(
+                              currentRange,
+                              currentStartDate,
+                              currentEndDate,
+                              currentStartTimeText,
+                              currentEndTimeText
+                            );
+                    }
+
+                    return (dynamicCounts, timeCounts);
+                });
+
+                // --- 3. Update UI on the Main Thread (Awaited continuation) ---
+
+                // Calculate the total number of filtered logs represented in the counts
+                FilteredLogCount = (int)dynamicLogData.Sum(c => c.Count);
+
+                // Update Main Charts
+                // Pass the captured sliceThreshold and isPercentMode values
+                UpdateBarChartUI(dynamicLogData);
+                UpdatePieChartUI(dynamicLogData, sliceThreshold, isPercentMode); // MODIFIED
+
+                // Update Time Series Chart (Only if requested)
+                if (!ignoreTimeChart)
+                {
+                    UpdateTimeSeriesChartUI(timeLogData);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log and handle exceptions
+                Console.WriteLine($"Error during chart calculation: {ex.Message}");
+                // This MessageBox call is safe because the catch block runs on the UI thread due to the 'await'
+                MessageBox.Show($"An error occurred during chart data calculation: {ex.Message}", "Chart Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                // 4. Reset UI state on the main thread
+                IsCalculating = false;
+            }
+        }
+
+        // --- Core UI Update Methods (Always run on the Main Thread) ---
+        // NOTE: The previous GetThreadSafeColor method has been removed, as CountItem.Color is now a thread-safe struct.
+
+        /// <summary>
+        /// Updates the Column/Bar Chart UI, must run on the main thread.
+        /// ASSUMPTION: CountItem.Color is now a thread-safe System.Windows.Media.Color struct.
         /// </summary>
         /// <param name="logData">The source data collection (ObservableCollection<CountItem>).</param>
-        private void UpdateBarChart(ObservableCollection<CountItem> logData)
+        private void UpdateBarChartUI(ObservableCollection<CountItem> logData)
         {
             SeriesCollection.Clear();
-            BarChartLegendItems.Clear(); // Clear and rebuild the custom legend
+            BarChartLegendItems.Clear();
 
             if (!logData.Any()) return;
 
-            // Iterate through the CountItems and create a distinct ColumnSeries for each item.
             foreach (var item in logData)
             {
+                // CRITICAL FIX: We create the UI-thread-owned SolidColorBrush here 
+                // using the thread-safe Color struct (item.Color).
+                SolidColorBrush uiThreadBrush = new SolidColorBrush(item.Color);
+
                 var series = new ColumnSeries
                 {
-                    // Use the key as the series Title, which LiveCharts will use for the X-axis label/legend.
                     Title = item.Key,
-                    // Values is a collection with only one element: the count for this key.
                     Values = new ChartValues<double> { item.Count },
-                    // Use the color assigned in LogDataStore for the bar's Fill.
-                    Fill = item.Color as SolidColorBrush,
-                    // Optional: Show data labels on the bar
+                    Fill = uiThreadBrush, // Use the new UI-thread-owned brush
                     DataLabels = true,
                     LabelPoint = point => point.Y.ToString("N0")
                 };
 
                 SeriesCollection.Add(series);
 
-                // NEW: Add item to the custom legend collection
                 BarChartLegendItems.Add(new ChartLegendItem
                 {
                     Key = item.Key,
-                    Color = item.Color,
-                    IsVisible = true, // Start visible
-                    LiveChartSeries = series // Store reference to the series object
+                    Color = uiThreadBrush, // Use the new UI-thread-owned brush
+                    IsVisible = true,
+                    LiveChartSeries = series
                 });
             }
         }
 
         /// <summary>
-        /// MODIFIED: Updates the Pie Chart based on the current data, label mode, and slice threshold.
-        /// It now uses the dynamic color brush assigned in LogDataStore for each CountItem.
+        /// Updates the Pie Chart UI, must run on the main thread.
+        /// ASSUMPTION: CountItem.Color is now a thread-safe System.Windows.Media.Color struct.
         /// </summary>
-        /// <param name="logData">Ghe source data collection (ObservableCollection<CountItem>).</param>
+        /// <param name="logData">The source data collection (ObservableCollection<CountItem>).</param>
         /// <param name="minPercentageThreshold">The minimum percentage for a slice to be displayed.</param>
-        private void UpdatePieChart(ObservableCollection<CountItem> logData, double minPercentageThreshold)
+        /// <param name="isPercentMode">A simple bool flag indicating if percent mode is active.</param>
+        private void UpdatePieChartUI(ObservableCollection<CountItem> logData, double minPercentageThreshold, bool isPercentMode)
         {
             PieSeriesCollection.Clear();
 
             double total = logData.Sum(c => c.Count);
             if (total == 0) return;
 
-            // Determine label formatter based on RadioButton selection
+            // Use the thread-safe boolean flag captured on the UI thread.
             Func<ChartPoint, string> labelFormatter = point =>
             {
-                // Safety check: Ensure controls are initialized before accessing them
-                if (!IsLoaded) return string.Empty;
-
-                if (PercentRadio.IsChecked == true)
+                if (isPercentMode)
                 {
                     return $"{point.SeriesView.Title}: {point.Participation:P1}";
                 }
@@ -426,17 +575,15 @@ namespace Log_Analyzer_App
                 // Apply minimum percentage threshold filter
                 if (percentage >= minPercentageThreshold)
                 {
-                    // CRITICAL FIX: Use the color property directly from CountItem.
-                    SolidColorBrush sliceColor = countItem.Color as SolidColorBrush;
-
-                    // Safety check, although it should always be a SolidColorBrush now
-                    if (sliceColor == null) continue;
+                    // CRITICAL FIX: We create the UI-thread-owned SolidColorBrush here 
+                    // using the thread-safe Color struct (countItem.Color).
+                    SolidColorBrush uiThreadBrush = new SolidColorBrush(countItem.Color);
 
                     PieSeriesCollection.Add(new PieSeries
                     {
                         Title = countItem.Key,
                         Values = new ChartValues<double> { countItem.Count },
-                        Fill = sliceColor,
+                        Fill = uiThreadBrush, // Use the new UI-thread-owned brush
                         DataLabels = true,
                         LabelPoint = labelFormatter
                     });
@@ -445,44 +592,39 @@ namespace Log_Analyzer_App
         }
 
         /// <summary>
-        /// NEW: Updates the Time Range Bar Chart based on the selected time range type and current date filters.
+        /// Updates the Time Range Bar Chart UI, must run on the main thread.
+        /// ASSUMPTION: CountItem.Color is now a thread-safe System.Windows.Media.Color struct.
         /// </summary>
-        /// <param name="rangeType">The time range to group by (Hours, Days, Weeks, Months).</param>
-        private void UpdateTimeRangeChart(TimeRangeType rangeType)
+        /// <param name="timeLogData">The source data collection (ObservableCollection<CountItem>).</param>
+        public void UpdateTimeSeriesChartUI(ObservableCollection<CountItem> timeLogData)
         {
             TimeSeriesCollection.Clear();
-
-            // CRITICAL: Get data using the new centralized helper, passing the chart's local filter properties.
-            ObservableCollection<CountItem> timeLogData = LogDataStore.GetTimeRangeSummaryCounts(
-                rangeType,
-                ChartStartDate,
-                ChartEndDate,
-                ChartStartTimeText,
-                ChartEndTimeText
-            );
 
             if (!timeLogData.Any())
             {
                 TimeLabels = new string[0];
-                OnPropertyChanged(nameof(TimeLabels)); // Notify update to clear axis labels
+                OnPropertyChanged(nameof(TimeLabels));
                 return;
             }
 
             // Extract labels (the formatted time strings)
             TimeLabels = timeLogData.Select(c => c.Key).ToArray();
-            OnPropertyChanged(nameof(TimeLabels)); // Notify update for the Axis.Labels binding
+            OnPropertyChanged(nameof(TimeLabels));
 
             // Extract values for the single series
             var values = timeLogData.Select(c => c.Count).ToList();
 
+            // CRITICAL FIX: We create the UI-thread-owned SolidColorBrush here 
+            // using the thread-safe Color struct (timeLogData.FirstOrDefault()?.Color).
+            Color safeColor = timeLogData.FirstOrDefault()?.Color ?? Colors.Black;
+            SolidColorBrush uiThreadBrush = new SolidColorBrush(safeColor);
+
             // The time chart is a single series chart
             var series = new ColumnSeries
             {
-                // Title for the single series bar chart (e.g., "Total Events")
                 Title = "Events Count",
                 Values = new ChartValues<double>(values),
-                // Use the color returned by the store (DodgerBlue)
-                Fill = timeLogData.FirstOrDefault()?.Color ?? System.Windows.Media.Brushes.DodgerBlue,
+                Fill = uiThreadBrush, // Use the new UI-thread-owned brush
                 DataLabels = true,
                 LabelPoint = point => point.Y.ToString("N0")
             };
@@ -490,6 +632,7 @@ namespace Log_Analyzer_App
             TimeSeriesCollection.Add(series);
         }
 
+        // --- Event Handlers (MODIFIED for async and UI updating) ---
 
         /// <summary>
         /// NEW: Toggles the visibility of the linked LiveCharts Series object when a legend item is clicked.
@@ -509,50 +652,34 @@ namespace Log_Analyzer_App
             }
         }
 
-
-        // --- Event Handlers ---
-
         /// <summary>
         /// Handles RadioButton changes for the Pie Chart label display.
         /// </summary>
-        private void PieLabelMode_Changed(object sender, RoutedEventArgs e)
+        private async void PieLabelMode_Changed(object sender, RoutedEventArgs e) // MODIFIED to async void
         {
             // CRITICAL FIX: Prevent execution if the control is not fully loaded.
             if (!IsLoaded) return;
 
-            // Recalculate only the pie chart labels
-            // CRITICAL: Fetch data *again* to ensure it uses the latest filtered count
-            ObservableCollection<CountItem> dynamicLogData = LogDataStore.GetDynamicSummaryCounts(
-                SelectedStatsField,
-                ChartStartDate,
-                ChartEndDate,
-                ChartStartTimeText,
-                ChartEndTimeText
-            );
-            UpdatePieChart(dynamicLogData, SliceThresholdSlider.Value);
+            // Rerun all charts, but instruct to ignore the heavy time chart calculation.
+            // FIX: Added await to resolve CS4014 warning and enforce proper sequencing
+            await UpdateAllCharts(ignoreTimeChart: true);
         }
 
         /// <summary>
         /// Handles Slider changes for the Pie Chart slice threshold.
         /// </summary>
-        private void SliceThresholdSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        private async void SliceThresholdSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) // MODIFIED to async void
         {
             // CRITICAL FIX: Prevent execution if the control is not fully loaded.
             if (!IsLoaded) return;
 
             // Update the display text
-            SlicePercentageText.Text = $"Minimum Slice Percentage ({e.NewValue:N0}%)";
+            // NOTE: The SlicePercentageText TextBox must be defined in the corresponding XAML file.
+            // SlicePercentageText.Text = $"Minimum Slice Percentage ({e.NewValue:N0}%)";
 
-            // Re-run the pie chart update with the new threshold
-            // CRITICAL: Fetch data *again* to ensure it uses the latest filtered count
-            ObservableCollection<CountItem> dynamicLogData = LogDataStore.GetDynamicSummaryCounts(
-                SelectedStatsField,
-                ChartStartDate,
-                ChartEndDate,
-                ChartStartTimeText,
-                ChartEndTimeText
-            );
-            UpdatePieChart(dynamicLogData, e.NewValue);
+            // Rerun all charts, but instruct to ignore the heavy time chart calculation.
+            // FIX: Added await to resolve CS4014 warning and enforce proper sequencing
+            await UpdateAllCharts(ignoreTimeChart: true);
         }
 
         // --- INotifyPropertyChanged Implementation ---

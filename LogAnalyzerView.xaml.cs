@@ -46,8 +46,9 @@ namespace Log_Analyzer_App
             set { _count = value; OnPropertyChanged(nameof(Count)); }
         }
 
-        private System.Windows.Media.Brush _color;
-        public System.Windows.Media.Brush Color
+        // CRITICAL FIX: Changed from Brush to the thread-safe Color struct.
+        private System.Windows.Media.Color _color;
+        public System.Windows.Media.Color Color
         {
             get => _color;
             set { _color = value; OnPropertyChanged(nameof(Color)); }
@@ -136,18 +137,19 @@ namespace Log_Analyzer_App
         // NEW: Static property to hold the *last used* field name for LogAnalyzerView
         public static string LastStatsFieldName { get; set; } = "Level";
 
-        // Predefined color brushes for common levels
-        private static readonly Dictionary<string, System.Windows.Media.Brush> LevelColors = new Dictionary<string, System.Windows.Media.Brush>(StringComparer.OrdinalIgnoreCase)
+        // FIX: Changed storage type from Brush to the thread-safe Color struct
+        private static readonly Dictionary<string, System.Windows.Media.Color> LevelColors = new Dictionary<string, System.Windows.Media.Color>(StringComparer.OrdinalIgnoreCase)
         {
-            { "INFO", System.Windows.Media.Brushes.Blue },
-            { "WARN", System.Windows.Media.Brushes.Orange },
-            { "ERROR", System.Windows.Media.Brushes.Red },
-            { "DEBUG", System.Windows.Media.Brushes.Gray },
-            { "FATAL", System.Windows.Media.Brushes.DarkRed },
+            // Use the Color struct's properties
+            { "INFO", System.Windows.Media.Colors.Blue },
+            { "WARN", System.Windows.Media.Colors.Orange },
+            { "ERROR", System.Windows.Media.Colors.Red },
+            { "DEBUG", System.Windows.Media.Colors.Gray },
+            { "FATAL", System.Windows.Media.Colors.DarkRed },
         };
 
-        // NEW: Cache for dynamically generated colors for non-standard keys (ensures consistency)
-        private static readonly Dictionary<string, System.Windows.Media.Brush> DynamicKeyColors = new Dictionary<string, System.Windows.Media.Brush>(StringComparer.OrdinalIgnoreCase);
+        // FIX: Changed cache storage type from Brush to the thread-safe Color struct
+        private static readonly Dictionary<string, System.Windows.Media.Color> DynamicKeyColors = new Dictionary<string, System.Windows.Media.Color>(StringComparer.OrdinalIgnoreCase);
 
         // Static Random instance for color generation
         private static readonly Random Rnd = new Random();
@@ -164,7 +166,8 @@ namespace Log_Analyzer_App
         /// NEW: Generates a random SolidColorBrush with a relatively high saturation to be visible on white background.
         /// Uses HSL color space for better color distribution and contrast.
         /// </summary>
-        private static System.Windows.Media.SolidColorBrush GetRandomBrush()
+        // FIX: Now returns a thread-safe Color struct, not a Brush
+        private static System.Windows.Media.Color GetRandomColor()
         {
             // Generate random HSL colors and convert to RGB for better color distribution of vivid colors
             // Use Saturation > 0.7 and Lightness around 0.5 to ensure it's not too pale or too dark.
@@ -175,7 +178,7 @@ namespace Log_Analyzer_App
             // HSL to RGB conversion
             var color = ColorFromHsl(hue, saturation, lightness);
 
-            return new System.Windows.Media.SolidColorBrush(color);
+            return color; // Return the thread-safe Color
         }
 
         /// <summary>
@@ -444,7 +447,8 @@ namespace Log_Analyzer_App
             // Add grouped results to the ObservableCollection
             foreach (var kvp in counts)
             {
-                System.Windows.Media.Brush color;
+                // FIX: Use the thread-safe Color struct
+                System.Windows.Media.Color color;
 
                 // 1. Check Predefined Colors (for common levels like INFO/ERROR)
                 if (LevelColors.ContainsKey(kvp.Key))
@@ -459,7 +463,8 @@ namespace Log_Analyzer_App
                 // 3. Generate New Random Color and Cache it
                 else
                 {
-                    color = GetRandomBrush();
+                    // FIX: Use GetRandomColor() now returns Color struct
+                    color = GetRandomColor();
                     DynamicKeyColors[kvp.Key] = color;
                 }
 
@@ -467,7 +472,7 @@ namespace Log_Analyzer_App
                 {
                     Key = kvp.Key,
                     Count = kvp.Value,
-                    Color = color
+                    Color = color // Assign the thread-safe Color struct
                 });
             }
 
@@ -576,7 +581,8 @@ namespace Log_Analyzer_App
                 .ToDictionary(g => g.Key, g => (double)g.Count());
 
             // 3. Format and Populate CountItems (using a consistent color, as this is a single series)
-            System.Windows.Media.Brush defaultColor = System.Windows.Media.Brushes.DodgerBlue; // Use a distinct color
+            // FIX: Use the thread-safe Color struct
+            System.Windows.Media.Color defaultColor = System.Windows.Media.Colors.DodgerBlue; // Use a distinct color
 
             foreach (var kvp in groupedData)
             {
@@ -586,7 +592,7 @@ namespace Log_Analyzer_App
                 {
                     Key = kvp.Key,
                     Count = kvp.Value,
-                    Color = defaultColor
+                    Color = defaultColor // Assign the thread-safe Color struct
                 });
             }
 
