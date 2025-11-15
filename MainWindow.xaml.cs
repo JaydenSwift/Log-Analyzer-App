@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Windows;
 using System.Windows.Controls;
+using System.ComponentModel; // Added for INotifyPropertyChanged
 // Make sure to include all necessary view namespaces
 using Log_Analyzer_App;
 
@@ -9,11 +10,29 @@ namespace Log_Analyzer_App
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
-    public partial class MainWindow : Window
+    public partial class MainWindow : Window, INotifyPropertyChanged // Added INotifyPropertyChanged
     {
+        // NEW: Property to control the visibility of the loading overlay
+        private bool _isLoading = false;
+        public bool IsLoading
+        {
+            get => _isLoading;
+            set
+            {
+                if (_isLoading != value)
+                {
+                    _isLoading = value;
+                    OnPropertyChanged(nameof(IsLoading));
+                    // Optional: Change the cursor system-wide
+                    this.Cursor = value ? System.Windows.Input.Cursors.Wait : System.Windows.Input.Cursors.Arrow;
+                }
+            }
+        }
+
         public MainWindow()
         {
             InitializeComponent();
+            this.DataContext = this; // Set DataContext for binding IsLoading property
         }
 
         /// <summary>
@@ -47,6 +66,22 @@ namespace Log_Analyzer_App
                     return; // Application is shutting down, no need to navigate
                 }
 
+                // If loading, do not allow navigation
+                if (IsLoading)
+                {
+                    // To prevent navigation while loading, deselect the new item and reselect the old one
+                    // Find the previously selected item (before the click triggered this event)
+                    var previousItem = e.RemovedItems.Count > 0 ? e.RemovedItems[0] as ListViewItem : null;
+                    if (previousItem != null)
+                    {
+                        // Reselect the previous item to revert the UI state
+                        SidebarMenu.SelectedItem = previousItem;
+                    }
+
+                    // Show a message or just silently ignore the click
+                    return;
+                }
+
                 NavigateToView(viewName);
             }
         }
@@ -65,7 +100,9 @@ namespace Log_Analyzer_App
                     newView = new LogAnalyzerView();
                     break;
                 case "ChartViewer":
-                    newView = new ChartViewer();
+                    // NEW: Ensure ChartViewer reloads data asynchronously when navigated to.
+                    var chartViewer = new ChartViewer();
+                    newView = chartViewer;
                     break;
                 case "SettingsView":
                     newView = new SettingsView();
@@ -84,6 +121,12 @@ namespace Log_Analyzer_App
             }
         }
 
-        // Removed the unused btnExit_Click handler
+        // --- INotifyPropertyChanged Implementation ---
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void OnPropertyChanged(string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
     }
 }

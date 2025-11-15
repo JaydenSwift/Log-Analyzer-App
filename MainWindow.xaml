@@ -5,11 +5,15 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         xmlns:local="clr-namespace:Log_Analyzer_App"
+        xmlns:materialDesignControls="clr-namespace:MaterialDesignThemes.Wpf;assembly=MaterialDesignThemes.Wpf"
         mc:Ignorable="d"
         Height="850" Width="1200" WindowStartupLocation="CenterScreen"
         WindowStyle="None" ResizeMode="NoResize" Background="{x:Null}" AllowsTransparency="True" Loaded="Window_Loaded">
+
+    <!-- Outer Grid wraps the Card to manage the loading overlay -->
     <Grid>
         <materialDesign:Card Margin="10" UniformCornerRadius="15">
+            <!-- Main Content Grid -->
             <Grid>
                 <Grid.ColumnDefinitions>
                     <!-- Column width is still 80 to guarantee click area. -->
@@ -77,7 +81,7 @@
                         <!-- Exit Button (Special Case - Now the ListViewItem itself is clickable and handles the selection logic) -->
                         <!-- FIX: Removed nested Button and moved the icon directly into the ListViewItem content to make the whole item clickable. -->
                         <ListViewItem Margin="0 15" IsSelected="False" Tag="Exit" ToolTip="Exit Application">
-                            <materialDesign:PackIcon Kind="ExitToApp" Foreground="{DynamicResource MaterialDesignBody}"/> 
+                            <materialDesign:PackIcon Kind="ExitToApp" Foreground="{DynamicResource MaterialDesignBody}"/>
                         </ListViewItem>
                     </ListView>
                 </Grid>
@@ -89,5 +93,36 @@
                 </Grid>
             </Grid>
         </materialDesign:Card>
+
+        <!-- NEW: Loading Overlay (Covers the whole card area) -->
+        <Grid x:Name="LoadingOverlay"
+              Margin="410,350,410,350"
+              Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}">
+
+            <!-- NEW: Border element ensures the background has rounded corners -->
+            <Border Background="{DynamicResource MaterialDesignPaper}"
+                    Opacity="1"
+                    CornerRadius="15">
+
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <!-- Use standard ProgressBar with MaterialDesignCircularProgressBar style -->
+                    <!-- Spinner size: 100x100 -->
+                    <ProgressBar Style="{StaticResource MaterialDesignCircularProgressBar}" 
+                                 IsIndeterminate="{Binding IsLoading}" 
+                                 Width="50" Height="50" 
+                                 Foreground="{DynamicResource SecondaryHueMidBrush}"/>
+                    <TextBlock Text="Processing Log Data..." 
+                               Margin="0 0 0 0" 
+                               FontSize="24" 
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource MaterialDesignBody}"/>
+                    <TextBlock Text="This may take a moment for large files." 
+                               Opacity="0.7" 
+                               FontSize="14" 
+                               HorizontalAlignment="Center"
+                               Foreground="{DynamicResource MaterialDesignBody}"/>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

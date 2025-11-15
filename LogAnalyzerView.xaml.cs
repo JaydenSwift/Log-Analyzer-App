@@ -1532,6 +1532,7 @@ namespace Log_Analyzer_App
         {
             string filePath = LogDataStore.SelectedFileForParsing;
             LogPatternDefinition definition = LogDataStore.CurrentPatternDefinition;
+            var mainWindow = Window.GetWindow(this) as MainWindow; // Get reference to the main window
 
             // Safety check
             if (string.IsNullOrWhiteSpace(filePath)) return;
@@ -1542,6 +1543,11 @@ namespace Log_Analyzer_App
             FilePathTextBlock.Text = LogDataStore.CurrentFilePath; // Update display
             LoadFileButton.IsEnabled = false; // Disable button during processing
             ExportButton.IsEnabled = false; // Disable export button during processing
+
+            if (mainWindow != null)
+            {
+                mainWindow.IsLoading = true; // NEW: Activate global loading overlay
+            }
 
             try
             {
@@ -1631,6 +1637,11 @@ namespace Log_Analyzer_App
                 LogDataStore.SelectedFileForParsing = null; // Clear the temporary path
                 // Note: LogDataStore.OriginalFilePath remains set for future parsing attempts
                 LoadFileButton.IsEnabled = true; // Re-enable Load button
+
+                if (mainWindow != null)
+                {
+                    mainWindow.IsLoading = false; // NEW: Deactivate global loading overlay
+                }
                 // ExportButton.IsEnabled state is handled by RefreshView (called above)
             }
         }
@@ -1681,7 +1692,7 @@ namespace Log_Analyzer_App
 
 
         /// <summary>
-        /// Executes the external Python parser script for both 'parse' and 'suggest_pattern' commands.
+        /// Executes the external Python parser script for both 'parse' and 'suggest_robust_pattern' commands.
         /// </summary>
         /// <param name="command">The command to run ('parse' or 'suggest_robust_pattern').</param>
         /// <param name="filePath">The path to the log file.</param>
@@ -1843,6 +1854,7 @@ namespace Log_Analyzer_App
             OpenFileDialog openFileDialog = new OpenFileDialog();
             openFileDialog.Filter = "Log Files (*.log, *.txt)|*.log;*.txt|All files (*.*)|*.*";
             openFileDialog.Title = "Select a Log File for Analysis";
+            var mainWindow = Window.GetWindow(this) as MainWindow; // Get reference to the main window
 
             bool? result = openFileDialog.ShowDialog();
 
@@ -1859,11 +1871,25 @@ namespace Log_Analyzer_App
                 LoadFileButton.IsEnabled = false; // Disable button during suggestion
                 ExportButton.IsEnabled = false; // Disable export button during suggestion
 
-                // Run the Python suggester command, passing the full file path for robust checking
-                // CRITICAL: RunPythonParser now automatically includes LogDataStore.CustomPatternsFilePath
-                await Task.Run(() => RunPythonParser("suggest_robust_pattern", openFileDialog.FileName, null, null));
+                if (mainWindow != null)
+                {
+                    mainWindow.IsLoading = true; // NEW: Activate global loading overlay for suggestion
+                }
 
-                LoadFileButton.IsEnabled = true; // Re-enable button
+                try
+                {
+                    // Run the Python suggester command, passing the full file path for robust checking
+                    // CRITICAL: RunPythonParser now automatically includes LogDataStore.CustomPatternsFilePath
+                    await Task.Run(() => RunPythonParser("suggest_robust_pattern", openFileDialog.FileName, null, null));
+                }
+                finally
+                {
+                    LoadFileButton.IsEnabled = true; // Re-enable button
+                    if (mainWindow != null)
+                    {
+                        mainWindow.IsLoading = false; // NEW: Deactivate global loading overlay
+                    }
+                }
                 // --- END NEW DYNAMIC PATTERN SUGGESTION ---
 
 
