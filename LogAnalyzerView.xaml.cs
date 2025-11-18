@@ -23,10 +23,10 @@ namespace Log_Analyzer_App
     // NEW: Enum for time-based grouping in charts
     public enum TimeRangeType
     {
-        Hours,
-        Days,
+        Months,
         Weeks,
-        Months
+        Days,
+        Hours
     }
 
     // --- New Model for Dynamic Summary Stats ---
@@ -91,6 +91,9 @@ namespace Log_Analyzer_App
     /// </summary>
     public static class LogDataStore
     {
+        // ** NEW: Constant for Top-N aggregation to prevent large data sets from freezing the app **
+        private const int TopNLimit = 10;
+
         // Persistent collection of log entries
         public static ObservableCollection<LogEntry> LogEntries { get; } = new ObservableCollection<LogEntry>();
         // Persistent file path
@@ -357,13 +360,14 @@ namespace Log_Analyzer_App
         /// <summary>
         /// NEW: Calculates the count for all unique values in a specific field, returning a new collection.
         /// This is used by the ChartViewer for independent analysis.
+        /// **CRITICAL MODIFICATION:** Implements Top-N aggregation to prevent freezing and chart clutter.
         /// </summary>
         /// <param name="statsFieldName">The name of the column/field to group by.</param>
         /// <param name="startDate">The chart's start date filter.</param>
         /// <param name="endDate">The chart's end date filter.</param>
         /// <param name="startTimeText">The chart's start time text.</param>
         /// <param name="endTimeText">The chart's end time text.</param>
-        /// <returns>A new ObservableCollection<CountItem> representing the counts.</returns>
+        /// <returns>A new ObservableCollection<CountItem> representing the counts (Top-N + Other).</returns>
         public static ObservableCollection<CountItem> GetDynamicSummaryCounts(string statsFieldName,
             DateTime? startDate = null, DateTime? endDate = null, string startTimeText = null, string endTimeText = null)
         {
@@ -379,7 +383,6 @@ namespace Log_Analyzer_App
             IEnumerable<LogEntry> sourceEntries;
 
             // If the filter arguments are NULL (used by LogAnalyzerView for its SummaryCounts)
-            // This is the filter used for the LogAnalyzerView Summary Card.
             if (!startDate.HasValue && !endDate.HasValue && string.IsNullOrEmpty(startTimeText) && string.IsNullOrEmpty(endTimeText))
             {
                 // Use the filtered data from the main grid view (which has its own filter applied)
@@ -433,25 +436,61 @@ namespace Log_Analyzer_App
                 return dynamicCounts;
             }
 
-            // Group by the value of the identified statistics field
-            var counts = sourceEntries
+            // Group by the value of the identified statistics field, sort by count descending
+            var allCounts = sourceEntries
                 // Safely try to get the field's value
                 .Where(e => e.Fields.ContainsKey(fieldName))
                 .Select(e => e.Fields[fieldName].Trim())
                 .Where(fieldValue => !string.IsNullOrEmpty(fieldValue) && fieldValue != "N/A")
-                // Group by the value (Key is the actual value, e.g., "INFO" or "Thread-1")
+                // Group by the value (Key is the actual value)
                 .GroupBy(fieldValue => fieldValue)
-                .OrderByDescending(g => g.Count())
-                .ToDictionary(g => g.Key, g => (double)g.Count());
+                .ToDictionary(g => g.Key, g => (double)g.Count())
+                // ** CRITICAL: Order by descending value (count) for Top-N selection **
+                .OrderByDescending(kvp => kvp.Value);
 
-            // Add grouped results to the ObservableCollection
-            foreach (var kvp in counts)
+            // --- NEW: TOP-N AGGREGATION LOGIC ---
+            var topNCounts = new Dictionary<string, double>();
+            double otherCount = 0;
+            int itemsTaken = 0;
+
+            // 1. Determine Top N and calculate 'Other' count
+            foreach (var kvp in allCounts)
+            {
+                if (itemsTaken < TopNLimit)
+                {
+                    topNCounts.Add(kvp.Key, kvp.Value);
+                    itemsTaken++;
+                }
+                else
+                {
+                    otherCount += kvp.Value;
+                }
+            }
+
+            // 2. Add 'Other' to the collection if it exists
+            if (otherCount > 0)
+            {
+                // Add the aggregated 'Other' count to the list
+                topNCounts.Add("Other", otherCount);
+            }
+            // --- END TOP-N AGGREGATION LOGIC ---
+
+            // 3. Add grouped results to the ObservableCollection
+            // Iterate over the finalized (TopN + Other) list, re-sorting if 'Other' was added
+            var finalSortedCounts = topNCounts.OrderByDescending(c => c.Value);
+
+            foreach (var kvp in finalSortedCounts)
             {
                 // FIX: Use the thread-safe Color struct
                 System.Windows.Media.Color color;
 
+                // Special color for "Other"
+                if (kvp.Key.Equals("Other", StringComparison.OrdinalIgnoreCase))
+                {
+                    color = System.Windows.Media.Colors.DarkGray;
+                }
                 // 1. Check Predefined Colors (for common levels like INFO/ERROR)
-                if (LevelColors.ContainsKey(kvp.Key))
+                else if (LevelColors.ContainsKey(kvp.Key))
                 {
                     color = LevelColors[kvp.Key];
                 }

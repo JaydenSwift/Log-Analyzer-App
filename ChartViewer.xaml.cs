@@ -54,6 +54,17 @@ namespace Log_Analyzer_App
     /// </summary>
     public partial class ChartViewer : UserControl, INotifyPropertyChanged
     {
+        // ** NEW: Expose the TopNLimit constant locally for UI binding **
+        public int TopNLimit => 10;
+
+        // ** NEW: Property to indicate if data has been aggregated into an "Other" category **
+        private bool _isAggregated = false;
+        public bool IsAggregated
+        {
+            get => _isAggregated;
+            set { _isAggregated = value; OnPropertyChanged(nameof(IsAggregated)); }
+        }
+
         // --- LiveCharts Properties ---
 
         private SeriesCollection _seriesCollection = new SeriesCollection();
@@ -106,7 +117,7 @@ namespace Log_Analyzer_App
         }
 
         // NEW: Time Range Grouping Properties
-        private TimeRangeType _selectedTimeRange = TimeRangeType.Hours;
+        private TimeRangeType _selectedTimeRange = TimeRangeType.Months;
         public TimeRangeType SelectedTimeRange
         {
             get => _selectedTimeRange;
@@ -400,6 +411,7 @@ namespace Log_Analyzer_App
                 TimeLabels = new string[0];
                 BarChartLegendItems.Clear();
                 FilteredLogCount = 0;
+                IsAggregated = false; // ** NEW: Reset aggregation flag **
                 return;
             }
 
@@ -474,6 +486,9 @@ namespace Log_Analyzer_App
 
                 // --- 3. Update UI on the Main Thread (Awaited continuation) ---
 
+                // ** NEW: Check for aggregation (the presence of "Other") **
+                IsAggregated = dynamicLogData.Any(c => c.Key.Equals("Other", StringComparison.OrdinalIgnoreCase));
+
                 // Calculate the total number of filtered logs represented in the counts
                 FilteredLogCount = (int)dynamicLogData.Sum(c => c.Count);
 
@@ -494,6 +509,7 @@ namespace Log_Analyzer_App
                 Console.WriteLine($"Error during chart calculation: {ex.Message}");
                 // This MessageBox call is safe because the catch block runs on the UI thread due to the 'await'
                 MessageBox.Show($"An error occurred during chart data calculation: {ex.Message}", "Chart Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                IsAggregated = false; // ** NEW: Reset aggregation flag on error **
             }
             finally
             {

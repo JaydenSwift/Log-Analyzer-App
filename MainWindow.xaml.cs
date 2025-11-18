@@ -1,8 +1,7 @@
 ﻿using System;
 using System.Windows;
 using System.Windows.Controls;
-using System.ComponentModel; // Added for INotifyPropertyChanged
-// Make sure to include all necessary view namespaces
+using System.ComponentModel;
 using Log_Analyzer_App;
 
 namespace Log_Analyzer_App
@@ -10,9 +9,8 @@ namespace Log_Analyzer_App
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
-    public partial class MainWindow : Window, INotifyPropertyChanged // Added INotifyPropertyChanged
+    public partial class MainWindow : Window, INotifyPropertyChanged
     {
-        // NEW: Property to control the visibility of the loading overlay
         private bool _isLoading = false;
         public bool IsLoading
         {
@@ -23,7 +21,6 @@ namespace Log_Analyzer_App
                 {
                     _isLoading = value;
                     OnPropertyChanged(nameof(IsLoading));
-                    // Optional: Change the cursor system-wide
                     this.Cursor = value ? System.Windows.Input.Cursors.Wait : System.Windows.Input.Cursors.Arrow;
                 }
             }
@@ -32,7 +29,7 @@ namespace Log_Analyzer_App
         public MainWindow()
         {
             InitializeComponent();
-            this.DataContext = this; // Set DataContext for binding IsLoading property
+            this.DataContext = this;
         }
 
         /// <summary>
@@ -42,7 +39,6 @@ namespace Log_Analyzer_App
         /// </summary>
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            // Explicitly call the navigation method to guarantee the initial view loads.
             NavigateToView("LogAnalyzerView");
         }
 
@@ -61,9 +57,8 @@ namespace Log_Analyzer_App
                 // Check for the special case 'Exit' tag
                 if (viewName == "Exit")
                 {
-                    // FIX: Handle exit directly here since the ListViewItem click triggers the selection.
                     Application.Current.Shutdown();
-                    return; // Application is shutting down, no need to navigate
+                    return;
                 }
 
                 // If loading, do not allow navigation
@@ -100,7 +95,6 @@ namespace Log_Analyzer_App
                     newView = new LogAnalyzerView();
                     break;
                 case "ChartViewer":
-                    // NEW: Ensure ChartViewer reloads data asynchronously when navigated to.
                     var chartViewer = new ChartViewer();
                     newView = chartViewer;
                     break;
@@ -108,7 +102,6 @@ namespace Log_Analyzer_App
                     newView = new SettingsView();
                     break;
                 default:
-                    // Log an error or return a default/error view if the name is unrecognized
                     Console.WriteLine($"Error: Attempted to navigate to unknown view: {viewName}");
                     return;
             }

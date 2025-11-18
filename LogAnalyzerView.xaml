@@ -7,10 +7,7 @@
              xmlns:local="clr-namespace:Log_Analyzer_App"
              mc:Ignorable="d" 
              d:DesignHeight="830" d:DesignWidth="1020">
-
-    <!-- The problematic UserControl.Resources block is removed entirely -->
-
-    <!-- FIX: Applied TextElement.Foreground to the root container Grid -->
+    
     <Grid Margin="20" TextElement.Foreground="{DynamicResource MaterialDesignBody}">
         <Grid.ColumnDefinitions>
             <!-- Column for the DataGrid and main controls -->
@@ -28,7 +25,6 @@
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <!-- New Column for Export Button -->
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
@@ -40,7 +36,6 @@
                                TextWrapping="Wrap"
                                Opacity="0.7"/>
 
-                    <!-- NEW: Export Button -->
                     <Button Content="EXPORT" 
                             Grid.Column="1" 
                             x:Name="ExportButton"
@@ -73,8 +68,6 @@
 
                     <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="15 10">
                         <TextBlock Text="Log Lines" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        <!-- Bind Badged content to actual log count of the FILTERED view -->
-                        <!-- NOTE: Binding to Items.Count shows the filtered count, which is correct for the UI -->
                         <materialDesign:Badged Content="{Binding ElementName=LogDataGrid, Path=Items.Count}" Margin="10 3 0 0" BadgeBackground="{DynamicResource MaterialDesignLightTealAccentBrush}" BadgeForeground="White"/>
                     </StackPanel>
 
@@ -88,12 +81,6 @@
                               HorizontalContentAlignment="Right" 
                               Margin="15 0 15 15" 
                               SelectionChanged="DataGrid_SelectionChanged">
-                        <!-- 
-                        CRITICAL FIX: AutoGenerateColumns is now set to 'False'.
-                        The columns will be generated manually in the code-behind 
-                        (LogAnalyzerView.xaml.cs) using SetupDynamicColumns() to 
-                        ensure all user-defined fields are correctly displayed.
-                        -->
                     </DataGrid>
                 </Grid>
             </materialDesign:Card>
@@ -106,7 +93,6 @@
                 <TextBlock Text="Analysis &amp; Processing" FontSize="20" FontWeight="SemiBold" Margin="0 0 0 10"/>
 
                 <!-- Python Processing Status & Pattern Choice Card -->
-                <!-- ENSURE Background is MaterialDesignPaper for contrast/consistency -->
                 <materialDesign:Card UniformCornerRadius="10" Margin="0 0 0 15" Padding="15" Background="{DynamicResource MaterialDesignPaper}">
                     <StackPanel>
                         <TextBlock Text="Log File Parsing Configuration" FontWeight="Bold" Margin="0 0 0 10"/>
@@ -129,7 +115,6 @@
 
                             <materialDesign:Card UniformCornerRadius="5" Padding="10" Background="{DynamicResource MaterialDesignLightBackground}" Margin="0 0 0 10">
                                 <StackPanel>
-                                    <!-- The pattern is now displayed as a parse template, not a regex -->
                                     <TextBlock x:Name="PatternDisplayTextBlock" 
                                                Text="[Default Pattern Parse Template Placeholder]" 
                                                FontFamily="Consolas" 
@@ -145,12 +130,7 @@
                                 </StackPanel>
                             </materialDesign:Card>
 
-
-                            <!-- 
-                            CRITICAL FIX: Replaced the fixed 3-row Grid with an ItemsControl 
-                            to dynamically display *all* parsed fields and their names, 
-                            regardless of column count.
-                            -->
+                            
                             <ItemsControl ItemsSource="{Binding Path=PreviewModel.ParsedFirstLine.Fields}" Margin="0 0 0 10">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
@@ -193,16 +173,15 @@
                     </StackPanel>
                 </materialDesign:Card>
 
-                <!-- Filters Card (MOVED UP) -->
-                <!-- ENSURE Background is MaterialDesignPaper for contrast/consistency -->
+                <!-- Filters Card -->
                 <materialDesign:Card UniformCornerRadius="10" Margin="0 0 0 15" Padding="15" Background="{DynamicResource MaterialDesignPaper}">
                     <StackPanel>
                         <TextBlock Text="Filters" FontWeight="Bold" Margin="0 0 0 10"/>
 
-                        <!-- NEW: Date Range Filter Section -->
+                        <!-- Date Range Filter Section -->
                         <TextBlock Text="Date/Time Filter" Opacity="0.8" FontWeight="SemiBold" Margin="0 0 0 5"/>
 
-                        <!-- NEW: Timestamp Column Selector -->
+                        <!-- Timestamp Column Selector -->
                         <ComboBox materialDesign:HintAssist.Hint="Select Timestamp Column"
                                   ItemsSource="{Binding AvailableStatsFields}"
                                   SelectedItem="{Binding SelectedTimestampField, Mode=TwoWay}"
@@ -258,13 +237,11 @@
                                      Text="{Binding EndTimeText, UpdateSourceTrigger=PropertyChanged}"
                                      TextChanged="TimeRange_TextChanged"/>
                         </Grid>
-                        <!-- END NEW: Date/Time Range Filter Section -->
 
 
                         <!-- Column Visibility Controls -->
                         <TextBlock Text="Column Visibility" Opacity="0.8" FontWeight="SemiBold" Margin="0 0 0 5"/>
 
-                        <!-- FIX: Removed UniformCornerRadius from ScrollViewer and applied it to a new wrapping Card -->
                         <materialDesign:Card UniformCornerRadius="4" Padding="0" Margin="0 0 0 10" Background="{DynamicResource MaterialDesignPaper}">
                             <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto" BorderThickness="0" Padding="10">
                                 <ItemsControl ItemsSource="{Binding ColumnControls}">
@@ -302,13 +279,12 @@
                     </StackPanel>
                 </materialDesign:Card>
 
-                <!-- Summary Stats Card (DROPDOWN RESTORED) -->
-                <!-- ENSURE Background is MaterialDesignPaper for contrast/consistency -->
+                <!-- Summary Stats Card -->
                 <materialDesign:Card UniformCornerRadius="10" Margin="0 0 0 15" Padding="15" Background="{DynamicResource MaterialDesignPaper}">
                     <StackPanel>
                         <TextBlock Text="Summary Statistics" FontWeight="Bold" Margin="0 0 0 10"/>
 
-                        <!-- RESTORED: Field Selector Dropdown -->
+                        <!-- Field Selector Dropdown -->
                         <ComboBox materialDesign:HintAssist.Hint="Group by Column"
                                   ItemsSource="{Binding AvailableStatsFields}"
                                   SelectedItem="{Binding SelectedStatsField, Mode=TwoWay}"
@@ -326,7 +302,7 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
 
-                                        <!-- Icon (using the dynamic Color property) -->
+                                        <!-- Icon -->
                                         <materialDesign:PackIcon Kind="CircleSmall" Grid.Column="0" Margin="0 0 10 0" 
                                                                  Foreground="{Binding Color}" VerticalAlignment="Center" Width="20" Height="20"/>
 

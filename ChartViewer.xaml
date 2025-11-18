@@ -167,7 +167,24 @@
                         <Grid Grid.Column="0" Margin="0 0 10 0">
                             <!-- Bar Chart -->
                             <StackPanel>
-                                <TextBlock Text="Event Count Breakdown (Raw Counts)" FontWeight="SemiBold" Margin="0 0 0 10" HorizontalAlignment="Center" FontSize="18"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0 0 0 10">
+                                    <TextBlock Text="Event Count Breakdown" FontWeight="SemiBold" HorizontalAlignment="Center" FontSize="18"/>
+
+                                    <!-- ** NEW: Aggregation Warning Badge ** -->
+                                    <materialDesign:Badged 
+                                        BadgePlacementMode="TopRight"
+                                        Grid.Column="1"
+                                        Margin="10 0 0 0"
+                                        BadgeBackground="{DynamicResource MaterialDesignOrangeMidBrush}"
+                                        Visibility="{Binding IsAggregated, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <materialDesign:PackIcon Kind="AlertCircleOutline" 
+                                                                 Width="20" Height="20" 
+                                                                 VerticalAlignment="Center"
+                                                                 Foreground="{DynamicResource MaterialDesignOrangeMidBrush}"
+                                                                 ToolTip="{Binding TopNLimit, StringFormat='Data is aggregated: Showing top {0} values. Remaining data is grouped under &quot;Other&quot; to prevent chart overload.'}"/>
+                                    </materialDesign:Badged>
+                                </StackPanel>
+
                                 <lvc:CartesianChart Series="{Binding SeriesCollection}" LegendLocation="None" 
                                                     Hoverable="True"
                                                     Height="500">
@@ -228,7 +245,24 @@
 
                             <!-- Pie Chart -->
                             <StackPanel Grid.Row="0">
-                                <TextBlock Text="Percentage Distribution" FontWeight="SemiBold" Margin="0 0 0 10" HorizontalAlignment="Center" FontSize="18"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0 0 0 10">
+                                    <TextBlock Text="Percentage Distribution" FontWeight="SemiBold" HorizontalAlignment="Center" FontSize="18"/>
+
+                                    <!-- ** NEW: Aggregation Warning Badge (Repeat for Pie Chart) ** -->
+                                    <materialDesign:Badged 
+                                        BadgePlacementMode="TopRight"
+                                        Grid.Column="1"
+                                        Margin="10 0 0 0"
+                                        BadgeBackground="{DynamicResource MaterialDesignOrangeMidBrush}"
+                                        Visibility="{Binding IsAggregated, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <materialDesign:PackIcon Kind="AlertCircleOutline" 
+                                                                 Width="20" Height="20" 
+                                                                 VerticalAlignment="Center"
+                                                                 Foreground="{DynamicResource MaterialDesignOrangeMidBrush}"
+                                                                 ToolTip="{Binding TopNLimit, StringFormat='Data is aggregated: Showing top {0} values. Remaining data is grouped under &quot;Other&quot; to prevent chart overload.'}"/>
+                                    </materialDesign:Badged>
+                                </StackPanel>
+
                                 <lvc:PieChart Series="{Binding PieSeriesCollection}" 
                                               LegendLocation="Top" 
                                               Hoverable="True"
