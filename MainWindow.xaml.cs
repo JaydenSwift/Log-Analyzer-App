@@ -98,6 +98,9 @@ namespace Log_Analyzer_App
                     var chartViewer = new ChartViewer();
                     newView = chartViewer;
                     break;
+                case "ChatAssistantView": // NEW CASE
+                    newView = new ChatAssistantView();
+                    break;
                 case "SettingsView":
                     newView = new SettingsView();
                     break;

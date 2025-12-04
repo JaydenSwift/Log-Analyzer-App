@@ -73,7 +73,12 @@
                             <materialDesign:PackIcon Kind="ChartBoxOutline"/>
                         </ListViewItem>
 
-                        <!-- 3. Settings - Now holds just the icon -->
+                        <!-- 3. NEW: Chat Assistant Tab -->
+                        <ListViewItem Tag="ChatAssistantView" ToolTip="Chat/Query Assistant">
+                            <materialDesign:PackIcon Kind="RobotHappyOutline"/>
+                        </ListViewItem>
+
+                        <!-- 4. Settings - Now holds just the icon -->
                         <ListViewItem Tag="SettingsView" ToolTip="Settings">
                             <materialDesign:PackIcon Kind="CogOutline"/>
                         </ListViewItem>
