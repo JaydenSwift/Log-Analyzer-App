@@ -91,6 +91,20 @@ namespace Log_Analyzer_App
         // Reference to the global Log Entries
         public ObservableCollection<LogEntry> LogEntries => LogDataStore.LogEntries;
 
+        // New property to hold API debug information
+        private string _apiFeedbackText = "API Debug Info will appear here.";
+        public string ApiFeedbackText
+        {
+            get => _apiFeedbackText;
+            set
+            {
+                if (_apiFeedbackText != value)
+                {
+                    _apiFeedbackText = value;
+                    OnPropertyChanged(nameof(ApiFeedbackText));
+                }
+            }
+        }
 
         public ChatAssistantView()
         {
@@ -320,6 +334,9 @@ namespace Log_Analyzer_App
 
             AddAssistantMessage("Thinking...", Colors.Gray);
 
+            // Step 1: Initialize feedback text
+            ApiFeedbackText = "Preparing request payload...";
+
             try
             {
                 // Construct the JSON payload for the API
@@ -332,7 +349,10 @@ namespace Log_Analyzer_App
                     systemInstruction = new { parts = new[] { new { text = systemInstruction } } }
                 };
 
-                string jsonPayload = JsonSerializer.Serialize(payload);
+                string jsonPayload = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
+
+                // Step 2: Update feedback text with the actual payload
+                ApiFeedbackText = $"--- REQUEST PAYLOAD ---\n{jsonPayload}";
 
                 var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
@@ -340,9 +360,13 @@ namespace Log_Analyzer_App
                 string apiUrlWithKey = $"{GEMINI_API_URL}?key={API_KEY}";
 
                 var response = await _httpClient.PostAsync(apiUrlWithKey, content);
-                response.EnsureSuccessStatusCode();
 
                 string responseBody = await response.Content.ReadAsStringAsync();
+
+                // Step 3: Update feedback text immediately with the raw response
+                ApiFeedbackText = $"--- RAW RESPONSE ({response.StatusCode}) ---\n{responseBody}";
+
+                response.EnsureSuccessStatusCode();
 
                 // Process the API response
                 using (JsonDocument doc = JsonDocument.Parse(responseBody))
@@ -359,6 +383,8 @@ namespace Log_Analyzer_App
             }
             catch (Exception ex)
             {
+                // Step 4: Add detailed error info to the feedback box on failure
+                ApiFeedbackText = $"--- API ERROR ---\n{ex.Message}\n\nFull Exception:\n{ex.ToString()}";
                 UpdateLastAssistantMessage($"Error communicating with AI: {ex.Message}. Check your API key and network connection.", Colors.Red);
             }
             finally

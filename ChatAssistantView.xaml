@@ -64,11 +64,15 @@
             <materialDesign:Card Grid.Column="1" UniformCornerRadius="10" Padding="15">
                 <Grid>
                     <Grid.RowDefinitions>
+                        <!-- Row 0: Chat History -->
                         <RowDefinition Height="*"/>
+                        <!-- Row 1: Input/Send Button -->
                         <RowDefinition Height="Auto"/>
+                        <!-- Row 2: API Feedback Box (New) -->
+                        <RowDefinition Height="300"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Chat History List -->
+                    <!-- Chat History List (Row 0) -->
                     <ListView Grid.Row="0"
                               x:Name="ChatListView"
                               ItemsSource="{Binding ChatHistory}"
@@ -134,7 +138,7 @@
                         </ListView.ItemTemplate>
                     </ListView>
 
-                    <!-- Input and Send Button -->
+                    <!-- Input and Send Button (Row 1) -->
                     <Grid Grid.Row="1" Margin="0 15 0 0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -160,6 +164,21 @@
                             <materialDesign:PackIcon Kind="Send" VerticalAlignment="Center" Foreground="{StaticResource MaterialDesignPaper}"/>
                         </Button>
                     </Grid>
+
+                    <!-- API Feedback Box (New - Row 2) -->
+                    <materialDesign:Card Grid.Row="2" 
+                                         UniformCornerRadius="8" 
+                                         Padding="10" 
+                                         Margin="0 15 0 0" 
+                                         Background="{DynamicResource MaterialDesignDarkBackground}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <TextBlock Text="{Binding ApiFeedbackText}" 
+                                       Foreground="{DynamicResource MaterialDesignBody}"
+                                       FontFamily="Consolas"
+                                       FontSize="10"
+                                       TextWrapping="Wrap"/>
+                        </ScrollViewer>
+                    </materialDesign:Card>
                 </Grid>
             </materialDesign:Card>
         </Grid>
