@@ -40,7 +40,7 @@ namespace Log_Analyzer_App
     public partial class ChatAssistantView : UserControl, INotifyPropertyChanged
     {
         // --- Gemini API Configuration ---
-        private const string GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent";
+        private const string GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent";
         private string _apiKey = string.Empty; // Will be loaded from file
         private const string API_KEY_FILENAME = "api_key.txt";
 
