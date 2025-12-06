@@ -24,6 +24,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="api_key.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="patterns.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

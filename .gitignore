@@ -362,3 +362,6 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /ParsingScript/env
+
+#API Text File
+api_key.txt

@@ -16,6 +16,7 @@ using Microsoft.Win32;
 using System.Collections.ObjectModel; // Added for ObservableCollection
 using System.Windows.Threading; // Added for Dispatcher
 using System.Collections.Specialized; // Added for NotifyCollectionChangedEventArgs
+using System.Reflection; // Added for getting the assembly location
 
 namespace Log_Analyzer_App
 {
@@ -40,7 +41,8 @@ namespace Log_Analyzer_App
     {
         // --- Gemini API Configuration ---
         private const string GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent";
-        private const string API_KEY = "";
+        private string _apiKey = string.Empty; // Will be loaded from file
+        private const string API_KEY_FILENAME = "api_key.txt";
 
         private readonly HttpClient _httpClient = new HttpClient();
 
@@ -83,7 +85,8 @@ namespace Log_Analyzer_App
         }
 
         // Property to control the Send button enablement
-        public bool CanSendMessage => !string.IsNullOrWhiteSpace(CurrentQueryText) && IsDataLoaded && !IsLoading;
+        // Also checks if the API key has been successfully loaded
+        public bool CanSendMessage => !string.IsNullOrWhiteSpace(CurrentQueryText) && IsDataLoaded && !IsLoading && !string.IsNullOrWhiteSpace(_apiKey);
 
         private readonly List<ChatMessage> _chatHistory = new List<ChatMessage>();
         public List<ChatMessage> ChatHistory => _chatHistory;
@@ -111,6 +114,9 @@ namespace Log_Analyzer_App
             InitializeComponent();
             this.DataContext = this;
 
+            // Step 1: Load the API Key
+            LoadApiKeyFromFile();
+
             // Initial message from the assistant
             _chatHistory.Add(new ChatMessage
             {
@@ -130,6 +136,55 @@ namespace Log_Analyzer_App
             // Initial setup and state refresh
             RefreshState();
         }
+
+        /// <summary>
+        /// Loads the API key from a separate file named api_key.txt.
+        /// </summary>
+        private void LoadApiKeyFromFile()
+        {
+            // Initial state for feedback text before attempting to load
+            ApiFeedbackText = $"Attempting to load API Key from {API_KEY_FILENAME} in the application directory...";
+
+            try
+            {
+                // Get the directory where the application assembly is located
+                string assemblyLocation = Assembly.GetExecutingAssembly().Location;
+                string assemblyDirectory = Path.GetDirectoryName(assemblyLocation);
+                string filePath = Path.Combine(assemblyDirectory, API_KEY_FILENAME);
+
+                // Read the first line of the file, trim whitespace
+                _apiKey = File.ReadAllText(filePath).Trim();
+
+                if (string.IsNullOrWhiteSpace(_apiKey))
+                {
+                    string warningMessage = $"WARNING: The API key file '{API_KEY_FILENAME}' was found but is empty. Please ensure it contains your key.";
+                    AddAssistantMessage(warningMessage, Colors.OrangeRed);
+                    ApiFeedbackText = warningMessage; // Update debug panel
+                }
+                else
+                {
+                    // Success message
+                    ApiFeedbackText = $"API Key successfully loaded from {API_KEY_FILENAME}.";
+                }
+            }
+            catch (FileNotFoundException)
+            {
+                _apiKey = string.Empty; // Ensure it's empty if file not found
+                string criticalMessage = $"CRITICAL: The API key file '{API_KEY_FILENAME}' was not found in the application directory. Please create this file and paste your key inside.";
+                AddAssistantMessage(criticalMessage, Colors.Red);
+                ApiFeedbackText = criticalMessage; // Update debug panel
+            }
+            catch (Exception ex)
+            {
+                _apiKey = string.Empty;
+                string errorMessage = $"CRITICAL ERROR loading API key: {ex.Message}";
+                AddAssistantMessage(errorMessage, Colors.Red);
+                ApiFeedbackText = errorMessage; // Update debug panel
+            }
+
+            OnPropertyChanged(nameof(CanSendMessage)); // Update button state after loading attempt
+        }
+
 
         /// <summary>
         /// Forces notification for all data-related properties.
@@ -318,6 +373,12 @@ namespace Log_Analyzer_App
                 return;
             }
 
+            if (string.IsNullOrWhiteSpace(_apiKey))
+            {
+                UpdateLastAssistantMessage($"Cannot send message. API key has not been loaded successfully from '{API_KEY_FILENAME}'.", Colors.Red);
+                return;
+            }
+
             if (IsLoading) return;
 
             string userQuery = CurrentQueryText;
@@ -357,7 +418,7 @@ namespace Log_Analyzer_App
                 var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
                 // Execute the API call
-                string apiUrlWithKey = $"{GEMINI_API_URL}?key={API_KEY}";
+                string apiUrlWithKey = $"{GEMINI_API_URL}?key={_apiKey}"; // Use the loaded key
 
                 var response = await _httpClient.PostAsync(apiUrlWithKey, content);
 
