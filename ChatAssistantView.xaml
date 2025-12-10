@@ -64,12 +64,10 @@
             <materialDesign:Card Grid.Column="1" UniformCornerRadius="10" Padding="15">
                 <Grid>
                     <Grid.RowDefinitions>
-                        <!-- Row 0: Chat History -->
+                        <!-- Row 0: Chat History (Now takes up full space) -->
                         <RowDefinition Height="*"/>
                         <!-- Row 1: Input/Send Button -->
                         <RowDefinition Height="Auto"/>
-                        <!-- Row 2: API Feedback Box (New) -->
-                        <RowDefinition Height="300"/>
                     </Grid.RowDefinitions>
 
                     <!-- Chat History List (Row 0) -->
@@ -102,15 +100,15 @@
 
                                     <Border.Style>
                                         <Style TargetType="Border">
-                                            <!-- Default: Assistant (Left, Gray background) -->
+                                            <!-- Default: Assistant (Left, Light Gray background) -->
                                             <Setter Property="HorizontalAlignment" Value="Left"/>
-                                            <Setter Property="Background" Value="{DynamicResource MaterialDesignBackground}"/>
+                                            <Setter Property="Background" Value="#F0F0F0"/>
 
                                             <Style.Triggers>
                                                 <!-- Trigger: User (Right, Primary/Blue background) -->
                                                 <DataTrigger Binding="{Binding Sender}" Value="User">
                                                     <Setter Property="HorizontalAlignment" Value="Right"/>
-                                                    <Setter Property="Background" Value="{StaticResource PrimaryHueMidBrush}"/>
+                                                    <Setter Property="Background" Value="#3F51B5"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
@@ -127,7 +125,7 @@
                                                 <Style.Triggers>
                                                     <!-- Override TextColor if it's a user message (to contrast with blue background) -->
                                                     <DataTrigger Binding="{Binding Sender}" Value="User">
-                                                        <Setter Property="Foreground" Value="{StaticResource MaterialDesignPaper}"/>
+                                                        <Setter Property="Foreground" Value="White"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
@@ -165,20 +163,6 @@
                         </Button>
                     </Grid>
 
-                    <!-- API Feedback Box (New - Row 2) -->
-                    <materialDesign:Card Grid.Row="2" 
-                                         UniformCornerRadius="8" 
-                                         Padding="10" 
-                                         Margin="0 15 0 0" 
-                                         Background="{DynamicResource MaterialDesignDarkBackground}">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <TextBlock Text="{Binding ApiFeedbackText}" 
-                                       Foreground="{DynamicResource MaterialDesignBody}"
-                                       FontFamily="Consolas"
-                                       FontSize="10"
-                                       TextWrapping="Wrap"/>
-                        </ScrollViewer>
-                    </materialDesign:Card>
                 </Grid>
             </materialDesign:Card>
         </Grid>

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.IO;
-using System.Linq; // Added for Linq usage
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -13,10 +13,10 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using Microsoft.Win32;
-using System.Collections.ObjectModel; // Added for ObservableCollection
-using System.Windows.Threading; // Added for Dispatcher
-using System.Collections.Specialized; // Added for NotifyCollectionChangedEventArgs
-using System.Reflection; // Added for getting the assembly location
+using System.Collections.ObjectModel;
+using System.Windows.Threading;
+using System.Collections.Specialized;
+using System.Reflection;
 
 namespace Log_Analyzer_App
 {
@@ -24,8 +24,36 @@ namespace Log_Analyzer_App
     public class ChatMessage : INotifyPropertyChanged
     {
         public string Sender { get; set; }
-        public string Text { get; set; }
-        public Color TextColor { get; set; }
+
+        // REFACTORED: Use backing field and call OnPropertyChanged for Text
+        private string _text;
+        public string Text
+        {
+            get => _text;
+            set
+            {
+                if (_text != value)
+                {
+                    _text = value;
+                    OnPropertyChanged(nameof(Text));
+                }
+            }
+        }
+
+        // REFACTORED: Use backing field and call OnPropertyChanged for TextColor
+        private Color _textColor;
+        public Color TextColor
+        {
+            get => _textColor;
+            set
+            {
+                if (_textColor != value)
+                {
+                    _textColor = value;
+                    OnPropertyChanged(nameof(TextColor));
+                }
+            }
+        }
 
         public event PropertyChangedEventHandler PropertyChanged;
         protected virtual void OnPropertyChanged(string propertyName = null)
@@ -88,26 +116,14 @@ namespace Log_Analyzer_App
         // Also checks if the API key has been successfully loaded
         public bool CanSendMessage => !string.IsNullOrWhiteSpace(CurrentQueryText) && IsDataLoaded && !IsLoading && !string.IsNullOrWhiteSpace(_apiKey);
 
-        private readonly List<ChatMessage> _chatHistory = new List<ChatMessage>();
-        public List<ChatMessage> ChatHistory => _chatHistory;
+        // CHANGED: Use ObservableCollection for automatic UI updates
+        private readonly ObservableCollection<ChatMessage> _chatHistory = new ObservableCollection<ChatMessage>();
+        public ObservableCollection<ChatMessage> ChatHistory => _chatHistory;
 
         // Reference to the global Log Entries
         public ObservableCollection<LogEntry> LogEntries => LogDataStore.LogEntries;
 
-        // New property to hold API debug information
-        private string _apiFeedbackText = "API Debug Info will appear here.";
-        public string ApiFeedbackText
-        {
-            get => _apiFeedbackText;
-            set
-            {
-                if (_apiFeedbackText != value)
-                {
-                    _apiFeedbackText = value;
-                    OnPropertyChanged(nameof(ApiFeedbackText));
-                }
-            }
-        }
+        // REMOVED: ApiFeedbackText property and backing field
 
         public ChatAssistantView()
         {
@@ -115,6 +131,7 @@ namespace Log_Analyzer_App
             this.DataContext = this;
 
             // Step 1: Load the API Key
+            // Status messages for key loading are now integrated into the chat or console
             LoadApiKeyFromFile();
 
             // Initial message from the assistant
@@ -124,7 +141,7 @@ namespace Log_Analyzer_App
                 Text = "Welcome! Load a log file in the Analyzer tab, and then ask me questions about the dataset here.",
                 TextColor = Colors.DarkGray
             });
-            OnPropertyChanged(nameof(ChatHistory));
+            // REMOVED: OnPropertyChanged(nameof(ChatHistory)); -- No longer needed with ObservableCollection
 
             // Set up event handler to listen for changes in the global store
             // We ensure this only attaches once
@@ -139,11 +156,11 @@ namespace Log_Analyzer_App
 
         /// <summary>
         /// Loads the API key from a separate file named api_key.txt.
+        /// Reports status/errors to the console and the chat view.
         /// </summary>
         private void LoadApiKeyFromFile()
         {
-            // Initial state for feedback text before attempting to load
-            ApiFeedbackText = $"Attempting to load API Key from {API_KEY_FILENAME} in the application directory...";
+            Console.WriteLine($"Attempting to load API Key from {API_KEY_FILENAME} in the application directory...");
 
             try
             {
@@ -158,28 +175,29 @@ namespace Log_Analyzer_App
                 if (string.IsNullOrWhiteSpace(_apiKey))
                 {
                     string warningMessage = $"WARNING: The API key file '{API_KEY_FILENAME}' was found but is empty. Please ensure it contains your key.";
-                    AddAssistantMessage(warningMessage, Colors.OrangeRed);
-                    ApiFeedbackText = warningMessage; // Update debug panel
+                    // We use UpdateLastAssistantMessage to replace the initial welcome message with the critical error
+                    UpdateLastAssistantMessage(warningMessage, Colors.OrangeRed);
+                    Console.WriteLine(warningMessage);
                 }
                 else
                 {
-                    // Success message
-                    ApiFeedbackText = $"API Key successfully loaded from {API_KEY_FILENAME}.";
+                    Console.WriteLine($"API Key successfully loaded from {API_KEY_FILENAME}.");
                 }
             }
             catch (FileNotFoundException)
             {
                 _apiKey = string.Empty; // Ensure it's empty if file not found
                 string criticalMessage = $"CRITICAL: The API key file '{API_KEY_FILENAME}' was not found in the application directory. Please create this file and paste your key inside.";
-                AddAssistantMessage(criticalMessage, Colors.Red);
-                ApiFeedbackText = criticalMessage; // Update debug panel
+                // We use UpdateLastAssistantMessage to replace the initial welcome message with the critical error
+                UpdateLastAssistantMessage(criticalMessage, Colors.Red);
+                Console.WriteLine(criticalMessage);
             }
             catch (Exception ex)
             {
                 _apiKey = string.Empty;
                 string errorMessage = $"CRITICAL ERROR loading API key: {ex.Message}";
-                AddAssistantMessage(errorMessage, Colors.Red);
-                ApiFeedbackText = errorMessage; // Update debug panel
+                UpdateLastAssistantMessage(errorMessage, Colors.Red);
+                Console.WriteLine(errorMessage);
             }
 
             OnPropertyChanged(nameof(CanSendMessage)); // Update button state after loading attempt
@@ -364,6 +382,7 @@ namespace Log_Analyzer_App
 
         /// <summary>
         /// Builds the prompt and calls the Gemini API.
+        /// Writes debug information (payload, raw response) to the console.
         /// </summary>
         private async void AnalyzeData_Click(object sender, RoutedEventArgs e)
         {
@@ -395,8 +414,8 @@ namespace Log_Analyzer_App
 
             AddAssistantMessage("Thinking...", Colors.Gray);
 
-            // Step 1: Initialize feedback text
-            ApiFeedbackText = "Preparing request payload...";
+            // Step 1: Initialize console logging
+            Console.WriteLine("Preparing request payload...");
 
             try
             {
@@ -412,8 +431,8 @@ namespace Log_Analyzer_App
 
                 string jsonPayload = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
 
-                // Step 2: Update feedback text with the actual payload
-                ApiFeedbackText = $"--- REQUEST PAYLOAD ---\n{jsonPayload}";
+                // Step 2: Output payload to console
+                Console.WriteLine($"--- REQUEST PAYLOAD ---\n{jsonPayload}");
 
                 var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
@@ -424,8 +443,8 @@ namespace Log_Analyzer_App
 
                 string responseBody = await response.Content.ReadAsStringAsync();
 
-                // Step 3: Update feedback text immediately with the raw response
-                ApiFeedbackText = $"--- RAW RESPONSE ({response.StatusCode}) ---\n{responseBody}";
+                // Step 3: Output raw response to console
+                Console.WriteLine($"--- RAW RESPONSE ({response.StatusCode}) ---\n{responseBody}");
 
                 response.EnsureSuccessStatusCode();
 
@@ -439,13 +458,14 @@ namespace Log_Analyzer_App
                         .GetProperty("text")
                         .GetString();
 
+                    // This is the correct method for displaying the AI's final answer to the user
                     UpdateLastAssistantMessage(aiResponseText);
                 }
             }
             catch (Exception ex)
             {
-                // Step 4: Add detailed error info to the feedback box on failure
-                ApiFeedbackText = $"--- API ERROR ---\n{ex.Message}\n\nFull Exception:\n{ex.ToString()}";
+                // Step 4: Add detailed error info to console on failure
+                Console.WriteLine($"--- API ERROR ---\n{ex.Message}\n\nFull Exception:\n{ex.ToString()}");
                 UpdateLastAssistantMessage($"Error communicating with AI: {ex.Message}. Check your API key and network connection.", Colors.Red);
             }
             finally
@@ -458,7 +478,6 @@ namespace Log_Analyzer_App
         private void AddUserMessage(string text)
         {
             _chatHistory.Add(new ChatMessage { Sender = "User", Text = text, TextColor = Colors.DarkBlue });
-            OnPropertyChanged(nameof(ChatHistory));
             ScrollToBottom();
         }
 
@@ -470,7 +489,6 @@ namespace Log_Analyzer_App
                 Text = text,
                 TextColor = color ?? Colors.Black
             });
-            OnPropertyChanged(nameof(ChatHistory));
             ScrollToBottom();
         }
 
@@ -479,9 +497,10 @@ namespace Log_Analyzer_App
             // Find the last message sent by the assistant (useful for updating "Thinking...")
             if (_chatHistory.Count > 0 && _chatHistory[_chatHistory.Count - 1].Sender == "Assistant")
             {
+                // Updating properties on an existing item (which implements INotifyPropertyChanged)
+                // correctly notifies the UI without needing to notify the collection itself.
                 _chatHistory[_chatHistory.Count - 1].Text = text;
                 _chatHistory[_chatHistory.Count - 1].TextColor = color ?? Colors.Black;
-                OnPropertyChanged(nameof(ChatHistory));
                 ScrollToBottom();
             }
             else
